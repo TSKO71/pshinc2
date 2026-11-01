@@ -118,7 +118,7 @@ export class Horizon {
     if(upload){this.gpu.upload(upload[1]);this.uploads.delete(upload[0]);}
     // Coarse parents remain resident. Fine child data can be restored from IndexedDB.
     for(const [key,t] of this.tiles){
-      const w=16*2**t.level,d=Math.hypot((t.x+.5)*w-this.cx*16,(t.z+.5)*w-this.cz*16);
+      const w=TILE_SIZE*2**t.level,d=Math.hypot((t.x+.5)*w-this.cx*16,(t.z+.5)*w-this.cz*16);
       const parent=this.tiles.get(tileKey(t.level+1,Math.floor(t.x/2),Math.floor(t.z/2)));
       if(parent&&this.gpu.ready(parent)&&t.level<detailLevel(Math.max(0,d-w))){
         this.tiles.delete(key);this.stats.sourceBytes-=this.bytes(t);this.uploads.delete(key);this.gpu.drop(key);
