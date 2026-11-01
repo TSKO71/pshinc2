@@ -99,6 +99,8 @@ export class ChunkGenerator {
   readonly trialChambers: TrialChambers;
   /** corner columns for terrain height queries, with the noise at their cell corners as it's needed */
   private readonly heightCols = new Map<number, { c: ColumnSample; exactTop: number; corners: (Float32Array | undefined)[] }>();
+  /** Exact pre-surface height queries are shared by LOD slope tests and structure placement. */
+  private readonly firstFreeHeightCache = new Map<string, number>();
 
   constructor(seed: string | number | bigint) {
     this.seeds = SeedSource.fromWorldSeed(typeof seed === 'string' ? seed : BigInt(seed));
@@ -188,6 +190,16 @@ export class ChunkGenerator {
    * `oceanFloor`: OCEAN_FLOOR_WG, where water doesn't count
    */
   firstFreeHeight(x: number, z: number, oceanFloor = false): number {
+    const key = x + ',' + z + ',' + (oceanFloor ? 1 : 0);
+    const cached = this.firstFreeHeightCache.get(key);
+    if (cached !== undefined) return cached;
+    if (this.firstFreeHeightCache.size >= 32768) this.firstFreeHeightCache.clear();
+    const height = this.computeFirstFreeHeight(x, z, oceanFloor);
+    this.firstFreeHeightCache.set(key, height);
+    return height;
+  }
+
+  private computeFirstFreeHeight(x: number, z: number, oceanFloor = false): number {
     const x0 = Math.floor(x / CELL_W) * CELL_W, z0 = Math.floor(z / CELL_W) * CELL_W;
     const cols = [this.heightCol(x0, z0), this.heightCol(x0 + CELL_W, z0), this.heightCol(x0, z0 + CELL_W), this.heightCol(x0 + CELL_W, z0 + CELL_W)];
     const prelim = this.router.preliminarySurface(cols[0].c);
