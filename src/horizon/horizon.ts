@@ -25,8 +25,10 @@ export class Horizon {
   stats={sourceBytes:0,generated:0,cached:0,pending:0,tiles:0,captured:0,cacheFull:false};
   private queue: Generator<[number,number]>|null=null;
   private cx=NaN;private cz=NaN;
-  private requests: {x:number;z:number;saved:Awaited<ReturnType<NonNullable<ChunkManager['savedLoader']>>>}[]=[];
-  private busy=false;private epoch=0;
+  private requests: {x:number;z:number;saved:Awaited<ReturnType<NonNullable<ChunkManager['savedLoader']>>>;epoch:number}[]=[];
+  /** Cache lookups and worker jobs in flight, keyed by leaf coordinates. */
+  private readonly pending = new Map<string,number>();
+  private epoch=0;
   private dirty = new Set<Chunk>();
   private recovering = new Set<string>();
   private uploads = new Map<string,Tile>();
@@ -96,34 +98,50 @@ export class Horizon {
     for(let l=0;l<=desired;l++)if(this.tiles.has(tileKey(l,Math.floor(x/2**l),Math.floor(z/2**l))))return true;
     return false;
   }
+  private finishPending(x:number,z:number,epoch:number):void {
+    const key=tileKey(0,x,z);
+    if(this.pending.get(key)!==epoch)return;
+    this.pending.delete(key);
+    this.stats.pending=this.pending.size;
+  }
   nextJob():Job|null {
     if(!this.enabled||this.stats.cacheFull)return null;
     const request=this.requests.shift();
     if(request){
-      const epoch=this.epoch;
-      return {type:'horizon',cx:request.x,cz:request.z,saved:request.saved,done:t=>{
+      const {x,z,saved,epoch}=request;
+      return {type:'horizon',cx:x,cz:z,saved,done:t=>{
         if(epoch!==this.epoch)return;
-        this.busy=false;this.stats.pending=0;
+        this.finishPending(x,z,epoch);
         this.accept(t);this.stats.generated++;
-      },failed:()=>{if(epoch===this.epoch){this.busy=false;this.stats.pending=0;}}};
+      },failed:()=>this.finishPending(x,z,epoch)};
     }
-    if(this.busy||!this.queue)return null;
-    for(let i=0;i<64;i++){
-      const next=this.queue.next();if(next.done)return null;
-      const [x,z]=next.value;
-      if(this.covered(x,z)||this.manager.world.getChunk(x,z))continue;
-      this.busy=true;this.stats.pending=1;const epoch=this.epoch;
+    if(!this.queue)return null;
+    // Each worker may build one distant section at a time. The previous
+    // single global busy flag left every other worker idle during DH generation.
+    const limit=Math.max(1,this.manager.pool.size);
+    while(this.pending.size<limit){
+      const next=this.queue.next();if(next.done)break;
+      const [x,z]=next.value,key=tileKey(0,x,z);
+      if(this.covered(x,z)||this.manager.world.getChunk(x,z)||this.pending.has(key))continue;
+      const epoch=this.epoch;
+      this.pending.set(key,epoch);this.stats.pending=this.pending.size;
       void loadTile(this.cacheKey(0,x,z)).then(async cached=>{
-        if(epoch!==this.epoch)return;
-        if(cached){this.accept(cached,false);this.stats.cached++;this.busy=false;this.stats.pending=0;return;}
+        if(epoch!==this.epoch||this.pending.get(key)!==epoch)return;
+        if(cached){
+          this.accept(cached,false);this.stats.cached++;
+          this.finishPending(x,z,epoch);this.manager.pool.pump();return;
+        }
         const saved=await this.manager.savedLoader?.(x,z)??null;
-        if(epoch!==this.epoch)return;
-        this.requests.push({x,z,saved});this.manager.pool.pump();
-      }).catch(err=>{if(epoch===this.epoch){this.busy=false;this.stats.pending=0;console.warn('Horizon data load failed',err);}});
-      break;
+        if(epoch!==this.epoch||this.pending.get(key)!==epoch)return;
+        this.requests.push({x,z,saved,epoch});this.manager.pool.pump();
+      }).catch(err=>{
+        if(epoch!==this.epoch||this.pending.get(key)!==epoch)return;
+        this.finishPending(x,z,epoch);console.warn('Horizon data load failed',err);this.manager.pool.pump();
+      });
     }
     return null;
   }
+
   center(x:number,z:number):void {
     x=Math.floor(x/16);z=Math.floor(z/16);
     if(!this.queue||Math.abs(x-this.cx)>=8||Math.abs(z-this.cz)>=8){this.cx=x;this.cz=z;this.queue=coordinates(x,z,this.radius);}
@@ -149,6 +167,6 @@ export class Horizon {
     }
     this.gpu.draw(selected,p,this.radius*16);
   }
-  reset():void {this.epoch++;this.queue=null;this.busy=false;this.requests=[];this.tiles.clear();this.stats.sourceBytes=0;this.stats.tiles=0;this.stats.pending=0;this.dirty.clear();this.recovering.clear();this.uploads.clear();this.gpu.reset();}
+  reset():void {this.epoch++;this.queue=null;this.requests=[];this.pending.clear();this.tiles.clear();this.stats.sourceBytes=0;this.stats.tiles=0;this.stats.pending=0;this.dirty.clear();this.recovering.clear();this.uploads.clear();this.gpu.reset();}
   dispose():void {this.reset();this.gpu.dispose();}
 }
