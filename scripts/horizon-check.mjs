@@ -60,6 +60,7 @@ try {
     assert.ok(runs.length>0,'sampled generator column must contain terrain');
     assert.deepEqual(generator.sampleLodColumn(wx,wz),runs,'generator samples must be deterministic');
     assert.equal(runs[0].biome,generated.biomes[lz*16+lx],'far sample biome must match the full chunk biome');
+    assert.equal(runs.at(-1).max,generator.firstFreeHeight(wx,wz),'sampled terrain surface must match the exact density/aquifer height');
     for(let i=0;i<runs.length;i++){
       assert.ok(runs[i].min<runs[i].max);
       if(i)assert.ok(runs[i-1].max<=runs[i].min,'sampled runs must be sorted and non-overlapping');
