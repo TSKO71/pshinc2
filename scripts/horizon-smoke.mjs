@@ -44,12 +44,18 @@ try{
         columnTop[ci]=Math.max(columnTop[ci],top);
       }
       const valid=[...columnTop].filter(v=>v>-999),width=64*2**t.level,step=2**t.level;
-      const player=window.__game.player,lookAhead=[128,256,512,1024];
+      const g=window.__game,player=g.player,lookAhead=[128,256,512,1024];
+      const mul=(m,v)=>[0,1,2,3].map(i=>m[i]*v[0]+m[4+i]*v[1]+m[8+i]*v[2]+m[12+i]*v[3]);
+      const camera=[player.x,player.y+player.eyeHeightCam,player.z];
       const forwardSamples=lookAhead.map(d=>{
         const wx=player.x, wz=player.z+d;
         const ix=Math.max(0,Math.min(63,Math.floor((wx-t.x*width)/step)));
         const iz=Math.max(0,Math.min(63,Math.floor((wz-t.z*width)/step)));
-        return {distance:d,world:[wx,wz],sample:[ix,iz],surface:columnTop[iz*64+ix]};
+        const surface=columnTop[iz*64+ix];
+        const point=[t.x*width+(ix+.5)*step,surface,t.z*width+(iz+.5)*step];
+        const view=mul(g.renderer.view,[point[0]-camera[0],point[1]-camera[1],point[2]-camera[2],1]);
+        const clip=mul(g.renderer.proj,view);
+        return {distance:d,world:[wx,wz],sample:[ix,iz],surface,point,view,clip,ndc:clip[3]?[clip[0]/clip[3],clip[1]/clip[3],clip[2]/clip[3]]:null};
       });
       return {level:t.level,x:t.x,z:t.z,origin:[t.x*width,t.z*width],width,columns:t.columns.length,occupied,minTop,maxTop,avgRunTop:occupied?sumTop/occupied:null,avgColumnTop:valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:null,columnsAboveSea:valid.filter(v=>v>=63).length,forwardSamples,runs};
     });
