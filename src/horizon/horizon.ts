@@ -56,7 +56,7 @@ function* coordinates(cx:number,cz:number,radiusChunks:number):Generator<[number
   const distance=(t:[number,number,number])=>{
     const w=16*2**t[0];return Math.hypot((t[1]+.5)*w-playerX,(t[2]+.5)*w-playerZ);
   };
-  const fallback=[...parents.values()].sort((a,b)=>distance(a)-distance(b));
+  const fallback=[...parents.values()].sort((a,b)=>b[0]-a[0]||distance(a)-distance(b));
   for(const tile of fallback)yield tile;
   for(const tile of leaves)yield tile;
 }
