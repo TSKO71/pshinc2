@@ -20,7 +20,7 @@ try {
       if(winner){assert.equal(result.sky,y%16);assert.equal(result.block,y%8);}
     }
   }
-  const tile=(level,x,z)=>({level,x,z,columns:Array.from({length:256},()=>new Uint32Array())});
+  const tile=(level,x,z)=>({level,x,z,columns:Array.from({length:4096},()=>new Uint32Array())});
   const parent=tile(1,-1,-1),children=[tile(0,-2,-2),tile(0,-2,-1),tile(0,-1,-2),tile(0,-1,-1)];
   const map=new Map(children.map(t=>[D.tileKey(t.level,t.x,t.z),t]));
   let ready=new Set([parent,...children.slice(0,3)]);
@@ -30,19 +30,19 @@ try {
   const merged=D.mergeTiles(children);assert.equal(merged.x,-1);assert.equal(merged.z,-1);
   assert.throws(()=>D.mergeTiles([children[0],children[0],children[2],children[3]]));
   const parentBase=tile(1,0,0);
-  parentBase.columns=Array.from({length:256},()=>D.packColumn([span(0,8,1)]));
+  parentBase.columns=Array.from({length:4096},()=>D.packColumn([span(0,8,1)]));
   const northWest=tile(0,0,0);
-  northWest.columns=Array.from({length:256},()=>D.packColumn([span(0,8,2)]));
+  northWest.columns=Array.from({length:4096},()=>D.packColumn([span(0,8,2)]));
   const partial=D.mergeChildIntoParent(parentBase,northWest);
-  for(let z=0;z<16;z++)for(let x=0;x<16;x++){
-    const run=D.unpackColumn(partial.columns[z*16+x])[0];
-    assert.equal(run.id,x<8&&z<8?2:1,'fine child must replace only its parent quadrant');
+  for(let z=0;z<64;z++)for(let x=0;x<64;x++){
+    const run=D.unpackColumn(partial.columns[z*64+x])[0];
+    assert.equal(run.id,x<32&&z<32?2:1,'fine child must replace only its parent quadrant');
   }
   const southEast=tile(0,1,1);
-  southEast.columns=Array.from({length:256},()=>D.packColumn([span(0,8,3)]));
+  southEast.columns=Array.from({length:4096},()=>D.packColumn([span(0,8,3)]));
   const twice=D.mergeChildIntoParent(partial,southEast);
-  assert.equal(D.unpackColumn(twice.columns[15*16+15])[0].id,3);
-  assert.equal(D.unpackColumn(twice.columns[15*16])[0].id,1,'unloaded parent quadrants must remain intact');
+  assert.equal(D.unpackColumn(twice.columns[63*64+63])[0].id,3);
+  assert.equal(D.unpackColumn(twice.columns[63*64])[0].id,1,'unloaded parent quadrants must remain intact');
   assert.deepEqual(M.exposed(0,10,[span(2,4,1),span(7,12,1)]),[[0,2],[4,7]]);
   assert.equal(D.detailLevel(192),0);assert.equal(D.detailLevel(384),1);assert.equal(D.detailLevel(1536),3);
   const packedSample=[span(-64,320,0xffffffff,15,15),span(320,321,123,0,0)];
@@ -56,9 +56,9 @@ try {
   const sampledTile=S.captureGeneratedTile(-2,3,2,{sampleLodColumn:(x,z)=>{
     sampleCalls.push([x,z]);return [{min:-64,max:0,state:1,biome:2,sky:15,block:0}];
   }});
-  assert.equal(sampledTile.level,2);assert.equal(sampledTile.columns.length,256);
-  assert.deepEqual(sampleCalls[0],[-126,194]);
-  assert.deepEqual(sampleCalls.at(-1),[-66,254]);
+  assert.equal(sampledTile.level,2);assert.equal(sampledTile.columns.length,4096);
+  assert.deepEqual(sampleCalls[0],[-510,770]);
+  assert.deepEqual(sampleCalls.at(-1),[-258,1022]);
   assert.deepEqual(D.unpackColumn(sampledTile.columns[0]),[span(-64,0,131073,15,0)]);
   const generator=new G.ChunkGenerator('horizon-lod-validation');
   const generated=generator.generate(-3,5);
@@ -74,7 +74,7 @@ try {
       if(i)assert.ok(runs[i-1].max<=runs[i].min,'sampled runs must be sorted and non-overlapping');
     }
   }
-  const flat={level:0,x:0,z:0,columns:Array.from({length:256},()=>D.packColumn([span(0,10,1)]))};
+  const flat={level:0,x:0,z:0,columns:Array.from({length:4096},()=>D.packColumn([span(0,10,1)]))};
   const mesh=M.meshTile(flat,()=>0xabcdef);
   assert.equal(mesh.length/7,24,'a solid rectangular tile must collapse to six quads');
   console.log('PASS: voxel reduction oracle; parent-quadrant propagation; generator biome parity and deterministic sampled runs; mesh and LOD selection');
