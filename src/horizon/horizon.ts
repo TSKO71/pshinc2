@@ -10,22 +10,33 @@ import type { TerrainParams } from '../render/worldRenderer';
 import type { GL } from '../render/gl';
 import type { Atlas } from '../render/atlas';
 
-function* coordinates(cx:number,cz:number,radius:number):Generator<[number,number]> {
-  yield [cx,cz];
-  for(let r=1;r<=radius;r++)for(let i=-r;i<=r;i++){
-    if(i*i+r*r>radius*radius)continue;
-    yield [cx+i,cz-r];yield [cx+i,cz+r];
-    if(Math.abs(i)!==r){yield [cx-r,cz+i];yield [cx+r,cz+i];}
+function* coordinates(cx:number,cz:number,radiusChunks:number):Generator<[number,number,number]> {
+  const playerX=cx*16+8,playerZ=cz*16+8,radius=radiusChunks*16,rootLevel=7;
+  function* walk(level:number,x:number,z:number):Generator<[number,number,number]> {
+    const width=16*2**level,minX=x*width,minZ=z*width;
+    const dx=playerX<minX?minX-playerX:playerX>minX+width?playerX-(minX+width):0;
+    const dz=playerZ<minZ?minZ-playerZ:playerZ>minZ+width?playerZ-(minZ+width):0;
+    if(Math.max(dx,dz)>radius)return;
+    const distance=Math.hypot(playerX-(minX+width/2),playerZ-(minZ+width/2));
+    const desired=detailLevel(distance);
+    if(level>desired&&level>0){
+      for(let xSide=0;xSide<2;xSide++)for(let zSide=0;zSide<2;zSide++)
+        yield* walk(level-1,x*2+xSide,z*2+zSide);
+    }else yield [level,x,z];
   }
+  const width=16*2**rootLevel;
+  const minX=Math.floor((playerX-radius)/width),maxX=Math.floor((playerX+radius)/width);
+  const minZ=Math.floor((playerZ-radius)/width),maxZ=Math.floor((playerZ+radius)/width);
+  for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++)yield* walk(rootLevel,x,z);
 }
 export class Horizon {
   readonly gpu: HorizonRenderer;
   readonly radius: number;
   readonly tiles = new Map<string,Tile>();
   stats={sourceBytes:0,generated:0,cached:0,pending:0,tiles:0,captured:0,cacheFull:false};
-  private queue: Generator<[number,number]>|null=null;
+  private queue: Generator<[number,number,number]>|null=null;
   private cx=NaN;private cz=NaN;
-  private requests: {x:number;z:number;saved:Awaited<ReturnType<NonNullable<ChunkManager['savedLoader']>>>;epoch:number}[]=[];
+  private requests: {level:number;x:number;z:number;saved:Awaited<ReturnType<NonNullable<ChunkManager['savedLoader']>>>;epoch:number}[]=[];
   /** Cache lookups and worker jobs in flight, keyed by leaf coordinates. */
   private readonly pending = new Map<string,number>();
   private epoch=0;
@@ -93,13 +104,8 @@ export class Horizon {
     }
     this.stats.cacheFull=this.stats.sourceBytes>64*1024*1024||this.gpu.stats.bytes>128*1024*1024;
   }
-  private covered(x:number,z:number):boolean {
-    const desired=detailLevel(Math.hypot((x-this.cx)*16,(z-this.cz)*16));
-    for(let l=0;l<=desired;l++)if(this.tiles.has(tileKey(l,Math.floor(x/2**l),Math.floor(z/2**l))))return true;
-    return false;
-  }
-  private finishPending(x:number,z:number,epoch:number):void {
-    const key=tileKey(0,x,z);
+  private finishPending(level:number,x:number,z:number,epoch:number):void {
+    const key=tileKey(level,x,z);
     if(this.pending.get(key)!==epoch)return;
     this.pending.delete(key);
     this.stats.pending=this.pending.size;
@@ -108,44 +114,46 @@ export class Horizon {
     if(!this.enabled||this.stats.cacheFull)return null;
     const request=this.requests.shift();
     if(request){
-      const {x,z,saved,epoch}=request;
-      return {type:'horizon',cx:x,cz:z,saved,done:t=>{
+      const {level,x,z,saved,epoch}=request;
+      return {type:'horizon',cx:x,cz:z,level,saved,done:t=>{
         if(epoch!==this.epoch)return;
-        this.finishPending(x,z,epoch);
+        this.finishPending(level,x,z,epoch);
         this.accept(t);this.stats.generated++;
-      },failed:()=>this.finishPending(x,z,epoch)};
+      },failed:()=>this.finishPending(level,x,z,epoch)};
     }
     if(!this.queue)return null;
-    // Each worker may build one distant section at a time. The previous
-    // single global busy flag left every other worker idle during DH generation.
     const limit=Math.max(1,this.manager.pool.size);
     while(this.pending.size<limit){
       const next=this.queue.next();if(next.done)break;
-      const [x,z]=next.value,key=tileKey(0,x,z);
-      if(this.covered(x,z)||this.manager.world.getChunk(x,z)||this.pending.has(key))continue;
+      const [level,x,z]=next.value,key=tileKey(level,x,z);
+      if(this.tiles.has(key)||this.pending.has(key))continue;
+      if(level===0&&this.manager.world.getChunk(x,z))continue;
       const epoch=this.epoch;
       this.pending.set(key,epoch);this.stats.pending=this.pending.size;
-      void loadTile(this.cacheKey(0,x,z)).then(async cached=>{
+      void loadTile(this.cacheKey(level,x,z)).then(async cached=>{
         if(epoch!==this.epoch||this.pending.get(key)!==epoch)return;
         if(cached){
           this.accept(cached,false);this.stats.cached++;
-          this.finishPending(x,z,epoch);this.manager.pool.pump();return;
+          this.finishPending(level,x,z,epoch);this.manager.pool.pump();return;
         }
-        const saved=await this.manager.savedLoader?.(x,z)??null;
+        const saved=level===0?await this.manager.savedLoader?.(x,z)??null:null;
         if(epoch!==this.epoch||this.pending.get(key)!==epoch)return;
-        this.requests.push({x,z,saved,epoch});this.manager.pool.pump();
+        this.requests.push({level,x,z,saved,epoch});this.manager.pool.pump();
       }).catch(err=>{
         if(epoch!==this.epoch||this.pending.get(key)!==epoch)return;
-        this.finishPending(x,z,epoch);console.warn('Horizon data load failed',err);this.manager.pool.pump();
+        this.finishPending(level,x,z,epoch);console.warn('Horizon data load failed',err);this.manager.pool.pump();
       });
     }
     return null;
   }
-
   center(x:number,z:number):void {
     x=Math.floor(x/16);z=Math.floor(z/16);
-    if(!this.queue||Math.abs(x-this.cx)>=8||Math.abs(z-this.cz)>=8){this.cx=x;this.cz=z;this.queue=coordinates(x,z,this.radius);}
+    if(!this.queue||Math.abs(x-this.cx)>=8||Math.abs(z-this.cz)>=8){
+      this.cx=x;this.cz=z;this.epoch++;this.requests=[];this.pending.clear();this.stats.pending=0;
+      this.queue=coordinates(x,z,this.radius);
+    }
   }
+
   draw(p:TerrainParams,nearDistance:number):void {
     if(!this.enabled)return;
     const mx=Math.floor(p.camX/16)-64,mz=Math.floor(p.camZ/16)-64;this.mask.fill(0);
