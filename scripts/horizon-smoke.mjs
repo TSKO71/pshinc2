@@ -104,7 +104,11 @@ try{
       return {key,count:m.count,bytes:m.bytes,vertexCount,bounds:{minX,maxX,minY,maxY,minZ,maxZ},eboPresent:!!ebo,eboSize,eboHead:Array.from(indices.slice(0,24)),attribs,indicesMax,triangles,front,overlap,nondegenerate,samples};
     });
     gl.bindBuffer(gl.ARRAY_BUFFER,null);
-    return {url:location.href,search:location.search,stats:h.stats,gpu:h.gpu.stats,gl:window.__gl,camera:cam,world:{chunks:g.chunks.world.chunks.size,meshes:g.renderer.world.meshes.size},tiles,meshes:gpuMeshes};
+    const width=gl.canvas.width,height=gl.canvas.height,pixels=new Uint8Array(width*height*4);
+    gl.readPixels(0,0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+    let cyanPixels=0;
+    for(let i=0;i<pixels.length;i+=4)if(pixels[i]<24&&pixels[i+1]>220&&pixels[i+2]>160&&pixels[i+2]<245)cyanPixels++;
+    return {url:location.href,search:location.search,stats:h.stats,gpu:h.gpu.stats,gl:window.__gl,camera:cam,pixelCheck:{width,height,cyanPixels},world:{chunks:g.chunks.world.chunks.size,meshes:g.renderer.world.meshes.size},tiles,meshes:gpuMeshes};
   });
   report.view=await page.evaluate(()=>({position:[window.__game.player.x,window.__game.player.y,window.__game.player.z],yaw:window.__game.player.yaw,pitch:window.__game.player.pitch,horizon:window.__game.renderer.horizon.gpu.stats,world:{chunks:window.__game.chunks.world.chunks.size,meshes:window.__game.renderer.world.meshes.size}}));
   await page.screenshot({path:dir+'/initial.png'});
@@ -115,6 +119,9 @@ try{
   // Reset must cancel old completions and remove stale CPU/GPU state.
   report.reset=await page.evaluate(()=>{const h=window.__game.renderer.horizon;h.reset();return {tiles:h.tiles.size,bytes:h.gpu.stats.bytes};});
   if(report.reset.tiles||report.reset.bytes)throw Error('Reset leaked LOD data');
+  const rootMeshes=report.first.meshes.filter(m=>m.key==='5:-1:0'||m.key==='5:0:0');
+  if(rootMeshes.length!==2||rootMeshes.some(m=>!m.eboPresent||m.eboSize<m.count*4||m.indicesMax===0||m.overlap===0||m.nondegenerate===0))throw Error('Horizon root VAOs do not contain drawable indexed triangles');
+  if(report.first.gpu.debugMode!==1||report.first.pixelCheck.cyanPixels<100)throw Error('Distant LOD geometry produced no visible pixels');
   if(!report.first.gl.draws||report.hyper.gl.errors.length||report.hyper.gl.shaderErrors.length||report.first.gl.errors.length||report.first.gl.shaderErrors.length||errors.length)throw Error('Runtime errors or missing draws');
   report.result='PASS_SMOKE';
 }catch(e){report.result='FAIL';report.error=String(e);try{report.diagnostic=await page?.evaluate(()=>({horizon:window.__game?.renderer?.horizon?.stats,gpu:window.__game?.renderer?.horizon?.gpu?.stats,position:window.__game?.player&&[window.__game.player.x,window.__game.player.y,window.__game.player.z],gl:window.__gl}));}catch{}process.exitCode=1;}
