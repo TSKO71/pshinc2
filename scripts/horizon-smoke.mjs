@@ -22,7 +22,7 @@ try{
     const getError=WebGL2RenderingContext.prototype.getError;
     WebGL2RenderingContext.prototype.getError=function(){const e=getError.call(this);if(e)counters.errors.push(e);return e;};
   });
-  await page.goto('http://127.0.0.1:4173/?quick&seed=dh-port-smoke&rd=2&horizon=128&t=6000',{timeout:60000});
+  await page.goto('http://127.0.0.1:4173/?quick&seed=dh-port-smoke&rd=2&horizon=128&horizonDebug=1&t=6000',{timeout:60000});
   await page.waitForFunction(()=>window.__game?.spawned,null,{timeout:180000});
   await page.keyboard.press('Escape');
   await page.evaluate(()=>{const g=window.__game;g.screen=null;g.player.setGameMode('spectator');g.teleport(g.player.x,70,g.player.z,0,1);g.player.flying=true;});
