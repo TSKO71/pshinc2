@@ -28,7 +28,7 @@ export class HorizonRenderer {
   private meshes = new Map<string, Mesh>();
   private colors = new Map<number, number>();
   maskX = 0; maskZ = 0;
-  stats = { draws: 0, vertices: 0, bytes: 0 };
+  stats = { draws: 0, vertices: 0, bytes: 0, coarsestDrawnLevel: 0 };
   constructor(private gl: GL, private atlas: Atlas) {
     this.shader = new Shader(gl, VS, FS, 'horizon');
     this.indices = gl.createBuffer()!;
@@ -99,7 +99,7 @@ export class HorizonRenderer {
     gl.activeTexture(gl.TEXTURE0);
   }
   draw(tiles:Tile[],p:TerrainParams,radius:number):void {
-    const gl=this.gl,s=this.shader.use();this.stats.draws=0;this.stats.vertices=0;
+    const gl=this.gl,s=this.shader.use();this.stats.draws=0;this.stats.vertices=0;this.stats.coarsestDrawnLevel=0;
     gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.disable(gl.BLEND);gl.disable(gl.CULL_FACE);
     s.mat4('proj',p.proj);s.mat4('view',p.view);s.vec3('fogColor',...p.fogColor);s.vec2('fogRange',radius*.7,radius);
     s.vec2('maskOrigin',this.maskX,this.maskZ);s.i('lightmap',1);s.i('coverage',7);
@@ -109,7 +109,7 @@ export class HorizonRenderer {
       if(!p.frustum.testBox(x-p.camX,-64-p.camY,z-p.camZ,x+width-p.camX,320-p.camY,z+width-p.camZ))continue;
       const m=this.meshes.get(tileKey(t.level,t.x,t.z));if(!m)continue;
       s.vec3('offset',x-p.camX,-p.camY-64,z-p.camZ);s.vec2('origin',x,z);gl.bindVertexArray(m.vao);gl.drawElements(gl.TRIANGLES,m.count,gl.UNSIGNED_INT,0);
-      this.stats.draws++;this.stats.vertices+=m.count;
+      this.stats.draws++;this.stats.vertices+=m.count;this.stats.coarsestDrawnLevel=Math.max(this.stats.coarsestDrawnLevel,t.level);
     }
     gl.bindVertexArray(null);gl.enable(gl.CULL_FACE);gl.activeTexture(gl.TEXTURE0);
   }
