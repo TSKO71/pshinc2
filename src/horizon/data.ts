@@ -71,6 +71,25 @@ export function mergeTiles(children: readonly Tile[]): Tile {
   return { level, x, z, columns };
 }
 
+
+/** Update only the parent quadrant represented by one newly arrived child tile. */
+export function mergeChildIntoParent(parent: Tile, child: Tile): Tile {
+  if (child.level + 1 !== parent.level ||
+      Math.floor(child.x / 2) !== parent.x ||
+      Math.floor(child.z / 2) !== parent.z) throw new Error('Child does not belong to parent tile');
+  const columns = parent.columns.slice();
+  const offsetX = (child.x - parent.x * 2) * 8;
+  const offsetZ = (child.z - parent.z * 2) * 8;
+  for (let z = 0; z < 8; z++) for (let x = 0; x < 8; x++) {
+    const at = (cx: number, cz: number) => unpackColumn(child.columns[cz * 16 + cx]);
+    columns[(offsetZ + z) * 16 + offsetX + x] = packColumn(mergeColumns([
+      at(x * 2, z * 2), at(x * 2, z * 2 + 1),
+      at(x * 2 + 1, z * 2), at(x * 2 + 1, z * 2 + 1),
+    ]));
+  }
+  return { ...parent, columns };
+}
+
 /** LodQuadTree.calcDetailLevelFromDistance, MEDIUM quality (12 chunks, base 2). */
 export function detailLevel(distance: number): number {
   return Math.max(0, Math.min(7, Math.trunc(Math.log(Math.max(distance, 1) / (12 * 16)) / Math.log(2))));
