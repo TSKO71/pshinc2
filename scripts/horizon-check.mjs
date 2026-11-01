@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { loadModules } from './load.mjs';
-const {mods:[D,M,R],close}=await loadModules(['/src/horizon/data.ts','/src/horizon/mesh.ts','/src/horizon/reduce.ts']);
+const {mods:[D,M,R,B,G],close}=await loadModules(['/src/horizon/data.ts','/src/horizon/mesh.ts','/src/horizon/reduce.ts','/src/world/blocks.ts','/src/world/gen/generator.ts']);
 const span=(bottom,top,id,sky=15,block=0)=>({bottom,top,id,sky,block});
 try {
   assert.deepEqual(D.mergeColumns([[span(0,5,1)],[],[],[]]),[span(0,5,1)]);
@@ -29,6 +29,20 @@ try {
   ready.add(children[3]);assert.equal(D.selectTiles(parent,get,t=>ready.has(t),0,0).length,4);
   const merged=D.mergeTiles(children);assert.equal(merged.x,-1);assert.equal(merged.z,-1);
   assert.throws(()=>D.mergeTiles([children[0],children[0],children[2],children[3]]));
+  const parentBase=tile(1,0,0);
+  parentBase.columns=Array.from({length:256},()=>D.packColumn([span(0,8,1)]));
+  const northWest=tile(0,0,0);
+  northWest.columns=Array.from({length:256},()=>D.packColumn([span(0,8,2)]));
+  const partial=D.mergeChildIntoParent(parentBase,northWest);
+  for(let z=0;z<16;z++)for(let x=0;x<16;x++){
+    const run=D.unpackColumn(partial.columns[z*16+x])[0];
+    assert.equal(run.id,x<8&&z<8?2:1,'fine child must replace only its parent quadrant');
+  }
+  const southEast=tile(0,1,1);
+  southEast.columns=Array.from({length:256},()=>D.packColumn([span(0,8,3)]));
+  const twice=D.mergeChildIntoParent(partial,southEast);
+  assert.equal(D.unpackColumn(twice.columns[15*16+15])[0].id,3);
+  assert.equal(D.unpackColumn(twice.columns[15*16])[0].id,1,'unloaded parent quadrants must remain intact');
   assert.deepEqual(M.exposed(0,10,[span(2,4,1),span(7,12,1)]),[[0,2],[4,7]]);
   assert.equal(D.detailLevel(192),0);assert.equal(D.detailLevel(384),1);assert.equal(D.detailLevel(1536),3);
   const packedSample=[span(-64,320,0xffffffff,15,15),span(320,321,123,0,0)];
@@ -38,8 +52,21 @@ try {
   assert.ok(reduced.length<=6);assert.deepEqual(layered,original);
   assert.deepEqual(R.reduceRenderColumn(layered,1),[{...layered.at(-1),bottom:layered[0].bottom}]);
   for(let i=1;i<reduced.length;i++)assert.ok(reduced[i-1].top<=reduced[i].bottom);
+  const generator=new G.ChunkGenerator('horizon-lod-validation');
+  const generated=generator.generate(-3,5);
+  for(const [lx,lz] of [[0,0],[7,7],[15,15],[3,12]]){
+    const wx=-3*16+lx,wz=5*16+lz;
+    const runs=generator.sampleLodColumn(wx,wz);
+    assert.ok(runs.length>0,'sampled generator column must contain terrain');
+    assert.deepEqual(generator.sampleLodColumn(wx,wz),runs,'generator samples must be deterministic');
+    assert.equal(runs[0].biome,generated.biomes[lz*16+lx],'far sample biome must match the full chunk biome');
+    for(let i=0;i<runs.length;i++){
+      assert.ok(runs[i].min<runs[i].max);
+      if(i)assert.ok(runs[i-1].max<=runs[i].min,'sampled runs must be sorted and non-overlapping');
+    }
+  }
   const flat={level:0,x:0,z:0,columns:Array.from({length:256},()=>D.packColumn([span(0,10,1)]))};
   const mesh=M.meshTile(flat,()=>0xabcdef);
   assert.equal(mesh.length/7,24,'a solid rectangular tile must collapse to six quads');
-  console.log('PASS: 200 voxel-oracle reductions; light isolation; air/cavities; atomic four-child replacement; negative coordinates; occlusion; distance levels');
+  console.log('PASS: voxel reduction oracle; parent-quadrant propagation; generator biome parity and deterministic sampled runs; mesh and LOD selection');
 } finally {await close();}
