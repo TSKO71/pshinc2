@@ -340,8 +340,12 @@ export class ChunkGenerator {
     const surfaceDepth = Math.floor(sNoise * 2.75 + 3 + hashFloat(hash2(x, z, this.seedHash ^ 0x5d)) * 0.25);
     const secondary = this.surfaceSecondary.getValue(x, 0, z);
     const minSurface = Math.floor(preliminary) + surfaceDepth - 8;
-    const steep = this.firstFreeHeight(x, z + 1) >= this.firstFreeHeight(x, z - 1) + 4 ||
-      this.firstFreeHeight(x - 1, z) >= this.firstFreeHeight(x + 1, z) + 4;
+    const localX = x - chunkX, localZ = z - chunkZ;
+    const north = this.firstFreeHeight(x, z - Math.max(localZ - 1, 0));
+    const south = this.firstFreeHeight(x, z + Math.min(localZ + 1, 15) - localZ);
+    const west = this.firstFreeHeight(x - Math.max(localX - 1, 0), z);
+    const east = this.firstFreeHeight(x + Math.min(localX + 1, 15) - localX, z);
+    const steep = south >= north + 4 || west >= east + 4;
     let top = MIN_Y;
     for (let y = Math.min(yStart, MAX_Y - 1); y >= MIN_Y; y--) {
       if (states[y - MIN_Y] !== 0) { top = y + 1; break; }
