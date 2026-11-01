@@ -1,5 +1,5 @@
 import { BUILD_ID } from '../net/config';
-import { type Tile, tileKey, mergeTiles, mergeChildIntoParent, selectTiles, detailLevel } from './data';
+import { type Tile, tileKey, mergeTiles, mergeChildIntoParent, selectTiles, detailLevel, TILE_SIZE, MAX_LOD_LEVEL } from './data';
 import { captureChunk } from './source';
 import { loadTile, saveTile } from './store';
 import { HorizonRenderer } from './renderer';
@@ -10,10 +10,10 @@ import type { TerrainParams } from '../render/worldRenderer';
 import type { GL } from '../render/gl';
 import type { Atlas } from '../render/atlas';
 
-function* coordinates(cx:number,cz:number,radiusChunks:number):Generator<[number,number,number]> {
-  const playerX=cx*16+8,playerZ=cz*16+8,radius=radiusChunks*16,rootLevel=7;
+function* coordinates(cx:number,cz:number,radiusChunks:number,rootLevel:number):Generator<[number,number,number]> {
+  const playerX=cx*16+8,playerZ=cz*16+8,radius=radiusChunks*16;
   function* walk(level:number,x:number,z:number):Generator<[number,number,number]> {
-    const width=16*2**level,minX=x*width,minZ=z*width;
+    const width=TILE_SIZE*2**level,minX=x*width,minZ=z*width;
     const dx=playerX<minX?minX-playerX:playerX>minX+width?playerX-(minX+width):0;
     const dz=playerZ<minZ?minZ-playerZ:playerZ>minZ+width?playerZ-(minZ+width):0;
     if(Math.max(dx,dz)>radius)return;
@@ -29,7 +29,7 @@ function* coordinates(cx:number,cz:number,radiusChunks:number):Generator<[number
       for(const child of children)yield* walk(child[0],child[1],child[2]);
     }else yield [level,x,z];
   }
-  const width=16*2**rootLevel;
+  const width=TILE_SIZE*2**rootLevel;
   const minX=Math.floor((playerX-radius)/width),maxX=Math.floor((playerX+radius)/width);
   const minZ=Math.floor((playerZ-radius)/width),maxZ=Math.floor((playerZ+radius)/width);
   const roots:[number,number][]=[];
@@ -52,7 +52,7 @@ function* coordinates(cx:number,cz:number,radiusChunks:number):Generator<[number
     if(!leafKeys.has(key))parents.set(key,root);
   }
   const distance=(t:[number,number,number])=>{
-    const w=16*2**t[0];return Math.hypot((t[1]+.5)*w-playerX,(t[2]+.5)*w-playerZ);
+    const w=TILE_SIZE*2**t[0];return Math.hypot((t[1]+.5)*w-playerX,(t[2]+.5)*w-playerZ);
   };
   const fallback=[...parents.values()].sort((a,b)=>distance(a)-distance(b));
   for(const tile of fallback)yield tile;
@@ -72,12 +72,13 @@ export class Horizon {
   private dirty = new Set<Chunk>();
   private uploads = new Map<string,Tile>();
   private namespace='';
+  private get rootLevel():number{return Math.max(0,Math.min(MAX_LOD_LEVEL,Math.ceil(Math.log2(Math.max(1,this.radius*16/TILE_SIZE)))));}
   private mask=new Uint8Array(128*128);
   constructor(private manager:ChunkManager,gl:GL,atlas:Atlas,worldId:string,seed:string){
     this.gpu=new HorizonRenderer(gl,atlas);
     const n=Number(new URLSearchParams(location.search).get('horizon')??128);
     this.radius=Number.isFinite(n)?Math.max(0,Math.min(512,Math.trunc(n))):128;
-    this.namespace=`dh2:${BUILD_ID}:${worldId}:${seed}:`;
+    this.namespace=`dh3:${BUILD_ID}:${worldId}:${seed}:`;
   }
   get enabled():boolean{return this.radius>0&&!this.manager.remote&&this.manager.world.dim.id==='overworld';}
   private key(t:Tile):string{return tileKey(t.level,t.x,t.z);}
@@ -90,7 +91,7 @@ export class Horizon {
     this.stats.sourceBytes+=this.bytes(t);
     this.tiles.set(key,t);this.uploads.set(key,t);
     if(persist)void saveTile(this.cacheKey(t.level,t.x,t.z),t);
-    if(t.level<7){
+    if(t.level<this.rootLevel){
       const px=Math.floor(t.x/2),pz=Math.floor(t.z/2);
       const parent=this.tiles.get(tileKey(t.level+1,px,pz));
       if(parent)this.accept(mergeChildIntoParent(parent,t));
@@ -109,7 +110,9 @@ export class Horizon {
     for(const c of this.dirty){
       if(!world.chunks.has(c.key)){this.dirty.delete(c);continue;}
       if(c.dirty||c.meshing)continue;
-      this.accept(captureChunk(c));this.dirty.delete(c);this.stats.captured++;break;
+      const tx=Math.floor(c.cx/4),tz=Math.floor(c.cz/4),base=this.tiles.get(tileKey(0,tx,tz));
+      if(!base)continue;
+      this.accept(captureChunk(c,base));this.dirty.delete(c);this.stats.captured++;break;
     }
     const upload=this.uploads.entries().next().value as [string,Tile]|undefined;
     if(upload){this.gpu.upload(upload[1]);this.uploads.delete(upload[0]);}
@@ -146,7 +149,6 @@ export class Horizon {
       const next=this.queue.next();if(next.done)break;
       const [level,x,z]=next.value,key=tileKey(level,x,z);
       if(this.tiles.has(key)||this.pending.has(key))continue;
-      if(level===0&&this.manager.world.getChunk(x,z))continue;
       const epoch=this.epoch;
       this.pending.set(key,epoch);this.stats.pending=this.pending.size;
       void loadTile(this.cacheKey(level,x,z)).then(async cached=>{
@@ -168,7 +170,7 @@ export class Horizon {
     x=Math.floor(x/16);z=Math.floor(z/16);
     if(!this.queue||Math.abs(x-this.cx)>=8||Math.abs(z-this.cz)>=8){
       this.cx=x;this.cz=z;this.epoch++;this.requests=[];this.pending.clear();this.stats.pending=0;
-      this.queue=coordinates(x,z,this.radius);
+      this.queue=coordinates(x,z,this.radius,this.rootLevel);
     }
   }
 
@@ -185,9 +187,9 @@ export class Horizon {
     const selected:Tile[]=[],get=(l:number,x:number,z:number)=>this.tiles.get(tileKey(l,x,z));
     for(const t of this.tiles.values()){
       let ancestor = false;
-      for (let l=t.level+1;l<=7;l++) if(get(l,Math.floor(t.x/2**(l-t.level)),Math.floor(t.z/2**(l-t.level)))) {ancestor=true;break;}
+      for (let l=t.level+1;l<=this.rootLevel;l++) if(get(l,Math.floor(t.x/2**(l-t.level)),Math.floor(t.z/2**(l-t.level)))) {ancestor=true;break;}
       if(ancestor)continue;
-      const width=16*2**t.level;
+      const width=TILE_SIZE*2**t.level;
       if(Math.hypot((t.x+.5)*width-p.camX,(t.z+.5)*width-p.camZ)>this.radius*16+width)continue;
       selected.push(...selectTiles(t,get,v=>this.gpu.ready(v),p.camX,p.camZ));
     }
