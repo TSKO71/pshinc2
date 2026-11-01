@@ -3,6 +3,31 @@ import { MIN_Y, MAX_Y } from '../world/constants';
 import type { Chunk } from '../world/chunk';
 import { packColumn, type Tile, type Column } from './data';
 
+
+/**
+ * Generate a far tile directly from the world's density generator. Each LOD
+ * column is sampled once at the centre of its represented block area, exactly
+ * as the DH distant-generation path does, without producing full chunks.
+ */
+export function captureGeneratedTile(
+  tileX: number,
+  tileZ: number,
+  level: number,
+  generator: { sampleLodColumn(x: number, z: number): import('../world/gen/generator').LodSampleRun[] },
+): Tile {
+  const step = 2 ** level;
+  const baseX = tileX * 16 * step, baseZ = tileZ * 16 * step;
+  const columns: Uint32Array[] = new Array(256);
+  for (let z = 0; z < 16; z++) {
+    for (let x = 0; x < 16; x++) {
+      const wx = baseX + x * step + Math.floor(step / 2);
+      const wz = baseZ + z * step + Math.floor(step / 2);
+      columns[z * 16 + x] = packColumn(generator.sampleLodColumn(wx, wz));
+    }
+  }
+  return { level, x: tileX, z: tileZ, columns };
+}
+
 /** Read the actual, decorated world, including cavities, foliage and structures. */
 export function captureChunk(c: Chunk): Tile {
   const columns: Uint32Array[] = [];
