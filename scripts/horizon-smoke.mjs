@@ -64,20 +64,35 @@ try{
     const gpuMeshes=[...h.gpu.meshes.entries()].map(([key,m])=>{
       gl.bindBuffer(gl.ARRAY_BUFFER,m.vbo);
       const bytes=new Uint8Array(m.bytes);gl.getBufferSubData(gl.ARRAY_BUFFER,0,bytes);
-      const dv=new DataView(bytes.buffer),vertexCount=m.count/6*4;
+      const dv=new DataView(bytes.buffer),vertexCount=m.count/6*4,tile=m.source,width=64*2**tile.level;
       let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
-      const samples=[];
+      const clips=new Float64Array(vertexCount*4),samples=[];
       for(let i=0;i<vertexCount;i++){
         const o=i*12,x=dv.getUint16(o,true),y=dv.getUint16(o+2,true)-64,z=dv.getUint16(o+4,true);
         minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);
-        if(i%Math.max(1,Math.floor(vertexCount/8))===0){
-          const tile=m.source,width=64*2**tile.level,world=[x+tile.x*width,y,z+tile.z*width];
-          const view=mul(g.renderer.view,[world[0]-cam[0],world[1]-cam[1],world[2]-cam[2],1]);
-          const clip=mul(g.renderer.proj,view);
-          samples.push({index:i,local:[x,y,z],world,ndc:clip[3]?[clip[0]/clip[3],clip[1]/clip[3],clip[2]/clip[3]]:null});
-        }
+        const world=[x+tile.x*width,y,z+tile.z*width];
+        const view=mul(g.renderer.view,[world[0]-cam[0],world[1]-cam[1],world[2]-cam[2],1]);
+        const clip=mul(g.renderer.proj,view);clips.set(clip,i*4);
+        if(i%Math.max(1,Math.floor(vertexCount/8))===0)samples.push({index:i,local:[x,y,z],world,ndc:clip[3]?[clip[0]/clip[3],clip[1]/clip[3],clip[2]/clip[3]]:null});
       }
-      return {key,count:m.count,bytes:m.bytes,vertexCount,bounds:{minX,maxX,minY,maxY,minZ,maxZ},samples};
+      gl.bindVertexArray(m.vao);
+      const ebo=gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
+      const indices=new Uint32Array(m.count);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ebo);gl.getBufferSubData(gl.ELEMENT_ARRAY_BUFFER,0,indices);
+      gl.bindVertexArray(null);
+      let triangles=0,front=0,overlap=0,nondegenerate=0,indicesMax=0;
+      for(let i=0;i<indices.length;i+=3){
+        triangles++;
+        const a=indices[i],b=indices[i+1],c=indices[i+2];indicesMax=Math.max(indicesMax,a,b,c);
+        const ia=a*4,ib=b*4,ic=c*4;
+        const wa=clips[ia+3],wb=clips[ib+3],wc=clips[ic+3];
+        if(wa<=0||wb<=0||wc<=0)continue;front++;
+        const ax=clips[ia]/wa,ay=clips[ia+1]/wa,bx=clips[ib]/wb,by=clips[ib+1]/wb,cx=clips[ic]/wc,cy=clips[ic+1]/wc;
+        const area=Math.abs((bx-ax)*(cy-ay)-(by-ay)*(cx-ax));
+        if(area>1e-10)nondegenerate++;
+        const minU=Math.min(ax,bx,cx),maxU=Math.max(ax,bx,cx),minV=Math.min(ay,by,cy),maxV=Math.max(ay,by,cy);
+        if(maxU>=-1&&minU<=1&&maxV>=-1&&minV<=1)overlap++;
+      }
+      return {key,count:m.count,bytes:m.bytes,vertexCount,bounds:{minX,maxX,minY,maxY,minZ,maxZ},indicesMax,triangles,front,overlap,nondegenerate,samples};
     });
     gl.bindBuffer(gl.ARRAY_BUFFER,null);
     return {url:location.href,search:location.search,stats:h.stats,gpu:h.gpu.stats,gl:window.__gl,camera:cam,world:{chunks:g.chunks.world.chunks.size,meshes:g.renderer.world.meshes.size},tiles,meshes:gpuMeshes};
