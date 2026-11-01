@@ -5,7 +5,6 @@ import type { MeshInput } from '../render/mesher';
 import type { GenResult } from '../world/world';
 import type { DimensionId } from '../world/dimension';
 import type { Tile } from '../horizon/data';
-import type { ChunkManager } from '../world/chunkManager';
 import { touchOnly } from '../game/touch';
 
 /**
