@@ -36,13 +36,22 @@ try{
     const h=window.__game.renderer.horizon;
     const tiles=[...h.tiles.values()].map(t=>{
       let minTop=Infinity,maxTop=-Infinity,sumTop=0,occupied=0,runs=0;
-      for(const c of t.columns)for(let i=0;i<c.length;i+=2){
-        const id=c[i],high=c[i+1];if(!id)continue;
+      const columnTop=new Int16Array(t.columns.length);columnTop.fill(-999);
+      for(let ci=0;ci<t.columns.length;ci++)for(let i=0;i<t.columns[ci].length;i+=2){
+        const id=t.columns[ci][i],high=t.columns[ci][i+1];if(!id)continue;
         const bottom=((high>>>12)&4095)-64,top=bottom+(high&4095);
         minTop=Math.min(minTop,top);maxTop=Math.max(maxTop,top);sumTop+=top;occupied++;runs++;
+        columnTop[ci]=Math.max(columnTop[ci],top);
       }
-      const width=64*2**t.level;
-      return {level:t.level,x:t.x,z:t.z,origin:[t.x*width,t.z*width],width,columns:t.columns.length,occupied,minTop,maxTop,avgTop:occupied?sumTop/occupied:null,runs};
+      const valid=[...columnTop].filter(v=>v>-999),width=64*2**t.level,step=2**t.level;
+      const player=window.__game.player,lookAhead=[128,256,512,1024];
+      const forwardSamples=lookAhead.map(d=>{
+        const wx=player.x, wz=player.z+d;
+        const ix=Math.max(0,Math.min(63,Math.floor((wx-t.x*width)/step)));
+        const iz=Math.max(0,Math.min(63,Math.floor((wz-t.z*width)/step)));
+        return {distance:d,world:[wx,wz],sample:[ix,iz],surface:columnTop[iz*64+ix]};
+      });
+      return {level:t.level,x:t.x,z:t.z,origin:[t.x*width,t.z*width],width,columns:t.columns.length,occupied,minTop,maxTop,avgRunTop:occupied?sumTop/occupied:null,avgColumnTop:valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:null,columnsAboveSea:valid.filter(v=>v>=63).length,forwardSamples,runs};
     });
     const meshes=[...h.gpu.meshes.entries()].map(([key,m])=>({key,count:m.count,bytes:m.bytes}));
     return {stats:h.stats,gpu:h.gpu.stats,gl:window.__gl,world:{chunks:window.__game.chunks.world.chunks.size,meshes:window.__game.renderer.world.meshes.size},tiles,meshes};
