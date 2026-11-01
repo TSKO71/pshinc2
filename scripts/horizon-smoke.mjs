@@ -33,7 +33,7 @@ try{
   await page.waitForFunction(()=>window.__game.renderer.horizon.gpu.stats.draws>0,null,{timeout:120000});
   await page.waitForTimeout(4000);
   report.first=await page.evaluate(()=>{
-    const h=window.__game.renderer.horizon;
+    const g=window.__game,h=g.renderer.horizon,player=g.player;
     const tiles=[...h.tiles.values()].map(t=>{
       let minTop=Infinity,maxTop=-Infinity,sumTop=0,occupied=0,runs=0;
       const columnTop=new Int16Array(t.columns.length);columnTop.fill(-999);
@@ -44,7 +44,7 @@ try{
         columnTop[ci]=Math.max(columnTop[ci],top);
       }
       const valid=[...columnTop].filter(v=>v>-999),width=64*2**t.level,step=2**t.level;
-      const g=window.__game,player=g.player,lookAhead=[128,256,512,1024];
+      const lookAhead=[128,256,512,1024];
       const mul=(m,v)=>[0,1,2,3].map(i=>m[i]*v[0]+m[4+i]*v[1]+m[8+i]*v[2]+m[12+i]*v[3]);
       const camera=[player.x,player.y+player.eyeHeightCam,player.z];
       const forwardSamples=lookAhead.map(d=>{
