@@ -1,5 +1,5 @@
 import { BUILD_ID } from '../net/config';
-import { type Tile, tileKey, mergeTiles, selectTiles, detailLevel } from './data';
+import { type Tile, tileKey, mergeTiles, mergeChildIntoParent, selectTiles, detailLevel } from './data';
 import { captureChunk } from './source';
 import { loadTile, saveTile } from './store';
 import { HorizonRenderer } from './renderer';
@@ -41,7 +41,6 @@ export class Horizon {
   private readonly pending = new Map<string,number>();
   private epoch=0;
   private dirty = new Set<Chunk>();
-  private recovering = new Set<string>();
   private uploads = new Map<string,Tile>();
   private namespace='';
   private mask=new Uint8Array(128*128);
@@ -63,23 +62,14 @@ export class Horizon {
     this.tiles.set(key,t);this.uploads.set(key,t);
     if(persist)void saveTile(this.cacheKey(t.level,t.x,t.z),t);
     if(t.level<7){
-      const px=Math.floor(t.x/2),pz=Math.floor(t.z/2),children:Tile[]=[];
+      const px=Math.floor(t.x/2),pz=Math.floor(t.z/2);
+      const parent=this.tiles.get(tileKey(t.level+1,px,pz));
+      if(parent)this.accept(mergeChildIntoParent(parent,t));
+      const children:Tile[]=[];
       for(let x=0;x<2;x++)for(let z=0;z<2;z++){
         const child=this.tiles.get(tileKey(t.level,px*2+x,pz*2+z));if(child)children.push(child);
       }
       if(children.length===4)this.accept(mergeTiles(children));
-      else if(this.tiles.has(tileKey(t.level+1,px,pz))){
-        // Edited fine data must also reach a resident coarse ancestor.
-        for(let x=0;x<2;x++)for(let z=0;z<2;z++){
-          const sx=px*2+x,sz=pz*2+z,k=tileKey(t.level,sx,sz);
-          if(this.tiles.has(k)||this.recovering.has(k))continue;
-          this.recovering.add(k);const epoch=this.epoch;
-          void loadTile(this.cacheKey(t.level,sx,sz)).then(c=>{
-            if(epoch!==this.epoch)return;this.recovering.delete(k);
-            if(c&&!this.tiles.has(k))this.accept(c,false);
-          });
-        }
-      }
     }
     this.stats.tiles=this.tiles.size;
   }
@@ -175,6 +165,6 @@ export class Horizon {
     }
     this.gpu.draw(selected,p,this.radius*16);
   }
-  reset():void {this.epoch++;this.queue=null;this.requests=[];this.pending.clear();this.tiles.clear();this.stats.sourceBytes=0;this.stats.tiles=0;this.stats.pending=0;this.dirty.clear();this.recovering.clear();this.uploads.clear();this.gpu.reset();}
+  reset():void {this.epoch++;this.queue=null;this.requests=[];this.pending.clear();this.tiles.clear();this.stats.sourceBytes=0;this.stats.tiles=0;this.stats.pending=0;this.dirty.clear();this.uploads.clear();this.gpu.reset();}
   dispose():void {this.reset();this.gpu.dispose();}
 }
