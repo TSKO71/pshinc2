@@ -32,7 +32,21 @@ try{
   await page.waitForFunction(()=>{const s=window.__game.renderer.horizon.gpu.stats;return s.coarsestDrawnLevel>=3&&s.farthestDrawnDistanceBlocks>=768;},null,{timeout:180000});
   await page.waitForFunction(()=>window.__game.renderer.horizon.gpu.stats.draws>0,null,{timeout:120000});
   await page.waitForTimeout(4000);
-  report.first=await page.evaluate(()=>({stats:window.__game.renderer.horizon.stats,gpu:window.__game.renderer.horizon.gpu.stats,gl:window.__gl,world:{chunks:window.__game.chunks.world.chunks.size,meshes:window.__game.renderer.world.meshes.size}}));
+  report.first=await page.evaluate(()=>{
+    const h=window.__game.renderer.horizon;
+    const tiles=[...h.tiles.values()].map(t=>{
+      let minTop=Infinity,maxTop=-Infinity,sumTop=0,occupied=0,runs=0;
+      for(const c of t.columns)for(let i=0;i<c.length;i+=2){
+        const id=c[i],high=c[i+1];if(!id)continue;
+        const bottom=((high>>>12)&4095)-64,top=bottom+(high&4095);
+        minTop=Math.min(minTop,top);maxTop=Math.max(maxTop,top);sumTop+=top;occupied++;runs++;
+      }
+      const width=64*2**t.level;
+      return {level:t.level,x:t.x,z:t.z,origin:[t.x*width,t.z*width],width,columns:t.columns.length,occupied,minTop,maxTop,avgTop:occupied?sumTop/occupied:null,runs};
+    });
+    const meshes=[...h.gpu.meshes.entries()].map(([key,m])=>({key,count:m.count,bytes:m.bytes}));
+    return {stats:h.stats,gpu:h.gpu.stats,gl:window.__gl,world:{chunks:window.__game.chunks.world.chunks.size,meshes:window.__game.renderer.world.meshes.size},tiles,meshes};
+  });
   report.view=await page.evaluate(()=>({position:[window.__game.player.x,window.__game.player.y,window.__game.player.z],yaw:window.__game.player.yaw,pitch:window.__game.player.pitch,horizon:window.__game.renderer.horizon.gpu.stats,world:{chunks:window.__game.chunks.world.chunks.size,meshes:window.__game.renderer.world.meshes.size}}));
   await page.screenshot({path:dir+'/initial.png'});
   await page.evaluate(()=>{window.__game.opts.hyperShader=true;});
