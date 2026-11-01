@@ -44,7 +44,7 @@ export class Horizon {
   stats={sourceBytes:0,generated:0,coarseGenerated:0,cached:0,coarseCached:0,pending:0,tiles:0,captured:0,cacheFull:false};
   private queue: Generator<[number,number,number]>|null=null;
   private cx=NaN;private cz=NaN;
-  private requests: {level:number;x:number;z:number;saved:Awaited<ReturnType<NonNullable<ChunkManager['savedLoader']>>>;epoch:number}[]=[];
+  private requests: {level:number;x:number;z:number;epoch:number}[]=[];
   /** Cache lookups and worker jobs in flight, keyed by leaf coordinates. */
   private readonly pending = new Map<string,number>();
   private epoch=0;
@@ -112,8 +112,8 @@ export class Horizon {
     if(!this.enabled||this.stats.cacheFull)return null;
     const request=this.requests.shift();
     if(request){
-      const {level,x,z,saved,epoch}=request;
-      return {type:'horizon',cx:x,cz:z,level,saved,done:t=>{
+      const {level,x,z,epoch}=request;
+      return {type:'horizon',cx:x,cz:z,level,done:t=>{
         if(epoch!==this.epoch)return;
         this.finishPending(level,x,z,epoch);
         this.accept(t);this.stats.generated++;if(level>0)this.stats.coarseGenerated++;
@@ -134,9 +134,8 @@ export class Horizon {
           this.accept(cached,false);this.stats.cached++;if(level>0)this.stats.coarseCached++;
           this.finishPending(level,x,z,epoch);this.manager.pool.pump();return;
         }
-        const saved=level===0?await this.manager.savedLoader?.(x,z)??null:null;
         if(epoch!==this.epoch||this.pending.get(key)!==epoch)return;
-        this.requests.push({level,x,z,saved,epoch});this.manager.pool.pump();
+        this.requests.push({level,x,z,epoch});this.manager.pool.pump();
       }).catch(err=>{
         if(epoch!==this.epoch||this.pending.get(key)!==epoch)return;
         this.finishPending(level,x,z,epoch);console.warn('Horizon data load failed',err);this.manager.pool.pump();
