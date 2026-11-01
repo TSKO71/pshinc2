@@ -58,3 +58,11 @@ Validation: `npm run build`; `node scripts/horizon-check.mjs` (200 voxel-oracle
 reductions, generator biome/surface parity, parent-quadrant propagation and mesh
 checks); GitHub Actions `Horizon port validation` runs a software WebGL2 smoke
 scenario. Software results cannot establish Android or hardware GPU FPS.
+
+
+## Test deployment
+
+Cloudflare Pages project `pshinc2` keeps `main` as the production branch. Preview
+builds are enabled for all non-production branches, so `feature/dh-port` is
+published to its own preview URL and cannot replace `pshinc2.pages.dev`. Validate
+the branch preview before merging the port into `main`.
