@@ -1,4 +1,4 @@
-import { captureChunk } from '../horizon/source';
+import { captureChunk, captureGeneratedTile } from '../horizon/source';
 import type { HorizonJob } from './pool';
 // Worker: chunk generation and section meshing.
 
@@ -39,6 +39,12 @@ ctx.onmessage = (e: MessageEvent) => {
       initMesher(m.sprites);
       ctx.postMessage({ type: 'ready' });
     } else if (m.type === 'horizon') {
+      if (m.level > 0) {
+        // Coarse data is sampled directly from the native density generator:
+        // no 3x3 full-chunk generation, meshing, decoration or chunk lighting.
+        const tile = captureGeneratedTile(m.cx, m.cz, m.level, genFor('overworld') as ChunkGenerator);
+        ctx.postMessage({ type: 'horizon', id: m.id, tile }, tile.columns.map(c => c.buffer));
+      } else {
       // The SAME generator and World.addChunk border-write rules as the near world.
       // No sampled height function or independent terrain representation.
       const world = new World(), gen = genFor('overworld');
@@ -58,7 +64,8 @@ ctx.onmessage = (e: MessageEvent) => {
         }
       }
       const tile=captureChunk(world.getChunk(m.cx,m.cz)!);
-      ctx.postMessage({type:'horizon',id:m.id,tile});
+      ctx.postMessage({type:'horizon',id:m.id,tile},tile.columns.map(c=>c.buffer));
+      }
     } else if (m.type === 'gen') {
       const t0 = performance.now();
       const out = genFor(m.dim ?? 'overworld').generate(m.cx, m.cz);
