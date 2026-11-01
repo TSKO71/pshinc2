@@ -22,7 +22,7 @@ export function captureGeneratedTile(
     for (let x = 0; x < 16; x++) {
       const wx = baseX + x * step + Math.floor(step / 2);
       const wz = baseZ + z * step + Math.floor(step / 2);
-      columns[z * 16 + x] = packColumn(generator.sampleLodColumn(wx, wz));
+      columns[z * 16 + x] = packColumn(generator.sampleLodColumn(wx, wz).map(run => ({bottom:run.min,top:run.max,id:run.state+run.biome*65536,sky:run.sky,block:run.block})));
     }
   }
   return { level, x: tileX, z: tileZ, columns };
