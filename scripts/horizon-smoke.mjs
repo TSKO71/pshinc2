@@ -24,12 +24,12 @@ try{
   });
   await page.goto('http://127.0.0.1:4173/?quick&seed=dh-port-smoke&rd=2&horizon=128&t=6000',{timeout:60000});
   await page.waitForFunction(()=>window.__game?.spawned,null,{timeout:180000});
-  await page.waitForFunction(()=>{const s=window.__game.renderer.horizon.gpu.stats;return s.coarsestDrawnLevel>=3&&s.farthestDrawnDistanceBlocks>=768;},null,{timeout:180000});
-  await page.waitForFunction(()=>window.__game.renderer.horizon.gpu.stats.draws>0,null,{timeout:120000});
-  report.first=await page.evaluate(()=>({stats:window.__game.renderer.horizon.stats,gpu:window.__game.renderer.horizon.gpu.stats,gl:window.__gl}));
   await page.keyboard.press('Escape');
   await page.evaluate(()=>{const g=window.__game;g.screen=null;g.player.setGameMode('spectator');g.teleport(g.player.x,140,g.player.z,0,5);g.player.flying=true;});
+  await page.waitForFunction(()=>{const s=window.__game.renderer.horizon.gpu.stats;return s.coarsestDrawnLevel>=3&&s.farthestDrawnDistanceBlocks>=768;},null,{timeout:180000});
+  await page.waitForFunction(()=>window.__game.renderer.horizon.gpu.stats.draws>0,null,{timeout:120000});
   await page.waitForTimeout(1500);
+  report.first=await page.evaluate(()=>({stats:window.__game.renderer.horizon.stats,gpu:window.__game.renderer.horizon.gpu.stats,gl:window.__gl}));
   report.view=await page.evaluate(()=>({position:[window.__game.player.x,window.__game.player.y,window.__game.player.z],yaw:window.__game.player.yaw,pitch:window.__game.player.pitch,horizon:window.__game.renderer.horizon.gpu.stats}));
   await page.screenshot({path:dir+'/initial.png'});
   await page.evaluate(()=>{window.__game.opts.hyperShader=true;});
@@ -41,5 +41,5 @@ try{
   if(report.reset.tiles||report.reset.bytes)throw Error('Reset leaked LOD data');
   if(!report.first.gl.draws||report.hyper.gl.errors.length||report.hyper.gl.shaderErrors.length||report.first.gl.errors.length||report.first.gl.shaderErrors.length||errors.length)throw Error('Runtime errors or missing draws');
   report.result='PASS_SMOKE';
-}catch(e){report.result='FAIL';report.error=String(e);process.exitCode=1;}
+}catch(e){report.result='FAIL';report.error=String(e);try{report.diagnostic=await page?.evaluate(()=>({horizon:window.__game?.renderer?.horizon?.stats,gpu:window.__game?.renderer?.horizon?.gpu?.stats,position:window.__game?.player&&[window.__game.player.x,window.__game.player.y,window.__game.player.z],gl:window.__gl}));}catch{}process.exitCode=1;}
 finally{report.errors=errors;console.log(JSON.stringify(report));await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2));await browser?.close();server.kill();}
