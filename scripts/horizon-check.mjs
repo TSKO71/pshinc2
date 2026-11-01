@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { loadModules } from './load.mjs';
-const {mods:[D,M,R,B,G],close}=await loadModules(['/src/horizon/data.ts','/src/horizon/mesh.ts','/src/horizon/reduce.ts','/src/world/blocks.ts','/src/world/gen/generator.ts']);
+const {mods:[D,M,R,B,G,S],close}=await loadModules(['/src/horizon/data.ts','/src/horizon/mesh.ts','/src/horizon/reduce.ts','/src/world/blocks.ts','/src/world/gen/generator.ts','/src/horizon/source.ts']);
 const span=(bottom,top,id,sky=15,block=0)=>({bottom,top,id,sky,block});
 try {
   assert.deepEqual(D.mergeColumns([[span(0,5,1)],[],[],[]]),[span(0,5,1)]);
@@ -52,6 +52,14 @@ try {
   assert.ok(reduced.length<=6);assert.deepEqual(layered,original);
   assert.deepEqual(R.reduceRenderColumn(layered,1),[{...layered.at(-1),bottom:layered[0].bottom}]);
   for(let i=1;i<reduced.length;i++)assert.ok(reduced[i-1].top<=reduced[i].bottom);
+  const sampleCalls=[];
+  const sampledTile=S.captureGeneratedTile(-2,3,2,{sampleLodColumn:(x,z)=>{
+    sampleCalls.push([x,z]);return [{min:-64,max:0,state:1,biome:2,sky:15,block:0}];
+  }});
+  assert.equal(sampledTile.level,2);assert.equal(sampledTile.columns.length,256);
+  assert.deepEqual(sampleCalls[0],[-126,194]);
+  assert.deepEqual(sampleCalls.at(-1),[-66,254]);
+  assert.deepEqual(D.unpackColumn(sampledTile.columns[0]),[span(-64,0,131073,15,0)]);
   const generator=new G.ChunkGenerator('horizon-lod-validation');
   const generated=generator.generate(-3,5);
   for(const [lx,lz] of [[0,0],[7,7],[15,15],[3,12]]){
