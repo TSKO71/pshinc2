@@ -25,12 +25,15 @@ try{
   await page.goto('http://127.0.0.1:4173/?quick&seed=dh-port-smoke&rd=2&horizon=128&t=6000',{timeout:60000});
   await page.waitForFunction(()=>window.__game?.spawned,null,{timeout:180000});
   await page.keyboard.press('Escape');
-  await page.evaluate(()=>{const g=window.__game;g.screen=null;g.player.setGameMode('spectator');g.teleport(g.player.x,140,g.player.z,0,15);g.player.flying=true;});
+  await page.evaluate(()=>{const g=window.__game;g.screen=null;g.player.setGameMode('spectator');g.teleport(g.player.x,70,g.player.z,0,1);g.player.flying=true;});
+  // A valid horizon comparison requires an actual near-world baseline, not just
+  // the spawn flag. Wait for resident chunk meshes before judging distant terrain.
+  await page.waitForFunction(()=>window.__game.renderer.world.meshes.size>=8,null,{timeout:180000});
   await page.waitForFunction(()=>{const s=window.__game.renderer.horizon.gpu.stats;return s.coarsestDrawnLevel>=3&&s.farthestDrawnDistanceBlocks>=768;},null,{timeout:180000});
   await page.waitForFunction(()=>window.__game.renderer.horizon.gpu.stats.draws>0,null,{timeout:120000});
-  await page.waitForTimeout(1500);
-  report.first=await page.evaluate(()=>({stats:window.__game.renderer.horizon.stats,gpu:window.__game.renderer.horizon.gpu.stats,gl:window.__gl}));
-  report.view=await page.evaluate(()=>({position:[window.__game.player.x,window.__game.player.y,window.__game.player.z],yaw:window.__game.player.yaw,pitch:window.__game.player.pitch,horizon:window.__game.renderer.horizon.gpu.stats}));
+  await page.waitForTimeout(4000);
+  report.first=await page.evaluate(()=>({stats:window.__game.renderer.horizon.stats,gpu:window.__game.renderer.horizon.gpu.stats,gl:window.__gl,world:{chunks:window.__game.chunks.world.chunks.size,meshes:window.__game.renderer.world.meshes.size}}));
+  report.view=await page.evaluate(()=>({position:[window.__game.player.x,window.__game.player.y,window.__game.player.z],yaw:window.__game.player.yaw,pitch:window.__game.player.pitch,horizon:window.__game.renderer.horizon.gpu.stats,world:{chunks:window.__game.chunks.world.chunks.size,meshes:window.__game.renderer.world.meshes.size}}));
   await page.screenshot({path:dir+'/initial.png'});
   await page.evaluate(()=>{window.__game.opts.hyperShader=true;});
   await page.waitForTimeout(2000);
