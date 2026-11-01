@@ -24,7 +24,7 @@ try{
   });
   await page.goto('http://127.0.0.1:4173/?quick&seed=dh-port-smoke&rd=2&horizon=128&t=6000',{timeout:60000});
   await page.waitForFunction(()=>window.__game?.spawned,null,{timeout:180000});
-  await page.waitForFunction(()=>window.__game.renderer.horizon.gpu.stats.coarsestDrawnLevel>=3,null,{timeout:180000});
+  await page.waitForFunction(()=>{const s=window.__game.renderer.horizon.gpu.stats;return s.coarsestDrawnLevel>=3&&s.farthestDrawnDistanceBlocks>=768;},null,{timeout:180000});
   await page.waitForFunction(()=>window.__game.renderer.horizon.gpu.stats.draws>0,null,{timeout:120000});
   report.first=await page.evaluate(()=>({stats:window.__game.renderer.horizon.stats,gpu:window.__game.renderer.horizon.gpu.stats,gl:window.__gl}));
   await page.keyboard.press('Escape');
