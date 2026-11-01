@@ -23,9 +23,9 @@ try{
     WebGL2RenderingContext.prototype.getError=function(){const e=getError.call(this);if(e)counters.errors.push(e);return e;};
   });
   await page.goto('http://127.0.0.1:4173/?quick&seed=dh-port-smoke&rd=2&horizon=8&t=6000',{timeout:60000});
-  await page.waitForFunction(()=>window.__game?.spawned,{timeout:180000});
-  await page.waitForFunction(()=>window.__game.renderer.horizon.stats.generated>0,{timeout:180000});
-  await page.waitForFunction(()=>window.__game.renderer.horizon.gpu.stats.draws>0,{timeout:120000});
+  await page.waitForFunction(()=>window.__game?.spawned,null,{timeout:180000});
+  await page.waitForFunction(()=>window.__game.renderer.horizon.stats.generated>0,null,{timeout:180000});
+  await page.waitForFunction(()=>window.__game.renderer.horizon.gpu.stats.draws>0,null,{timeout:120000});
   report.first=await page.evaluate(()=>({stats:window.__game.renderer.horizon.stats,gpu:window.__game.renderer.horizon.gpu.stats,gl:window.__gl}));
   await page.screenshot({path:dir+'/initial.png'});
   // Reset must cancel old completions and remove stale CPU/GPU state.
@@ -34,4 +34,4 @@ try{
   if(!report.first.gl.draws||report.first.gl.errors.length||report.first.gl.shaderErrors.length||errors.length)throw Error('Runtime errors or missing draws');
   report.result='PASS_SMOKE';
 }catch(e){report.result='FAIL';report.error=String(e);process.exitCode=1;}
-finally{report.errors=errors;await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2));await browser?.close();server.kill();}
+finally{report.errors=errors;console.log(JSON.stringify(report));await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2));await browser?.close();server.kill();}

@@ -1,8 +1,8 @@
-import { Horizon } from '../horizon/horizon';
 // Game shell: owns renderer, GUI, world, level, player; runs the 20 TPS tick
 // loop and per-frame rendering like vanilla's Minecraft.runTick / GameRenderer.
 
 import '../world/blocks';
+import { Horizon } from '../horizon/horizon';
 import { generateBlockTextures } from '../textures/index';
 import { Atlas } from '../render/atlas';
 import { Renderer, Camera } from '../render/renderer';

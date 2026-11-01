@@ -23,12 +23,15 @@ interface Mesh { vao: WebGLVertexArrayObject; vbo: WebGLBuffer; count: number; b
 export class HorizonRenderer {
   private shader: Shader;
   private mask: WebGLTexture;
+  private indices: WebGLBuffer;
+  private indexCapacity = 0;
   private meshes = new Map<string, Mesh>();
   private colors = new Map<number, number>();
   maskX = 0; maskZ = 0;
   stats = { draws: 0, vertices: 0, bytes: 0 };
   constructor(private gl: GL, private atlas: Atlas) {
     this.shader = new Shader(gl, VS, FS, 'horizon');
+    this.indices = gl.createBuffer()!;
     this.mask = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D,this.mask);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
@@ -65,13 +68,29 @@ export class HorizonRenderer {
   upload(t:Tile):void {
     const key=tileKey(t.level,t.x,t.z),old=this.meshes.get(key);
     if(old?.source===t)return;
-    const data=meshTile(t,this.color),gl=this.gl;
+    const floats=meshTile(t,this.color),gl=this.gl;
+    const count=floats.length/7, data=new ArrayBuffer(count*12),view=new DataView(data);
+    for(let i=0;i<count;i++){
+      const p=i*7,o=i*12;
+      view.setUint16(o,floats[p],true);view.setUint16(o+2,floats[p+1]+64,true);view.setUint16(o+4,floats[p+2],true);
+      for(let c=0;c<3;c++)view.setUint8(o+6+c,Math.round(floats[p+3+c]*255));view.setUint8(o+9,floats[p+6]);
+    }
+    const quads=count/4;
+    if(quads>this.indexCapacity){
+      this.indexCapacity=Math.max(quads,this.indexCapacity*2,1024);
+      const ids=new Uint32Array(this.indexCapacity*6);
+      for(let q=0;q<this.indexCapacity;q++)ids.set([q*4,q*4+1,q*4+2,q*4,q*4+2,q*4+3],q*6);
+      gl.bindBuffer(gl.COPY_WRITE_BUFFER,this.indices);gl.bufferData(gl.COPY_WRITE_BUFFER,ids,gl.STATIC_DRAW);
+    }
     const vao=gl.createVertexArray()!,vbo=gl.createBuffer()!;
     gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,vbo);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
-    for(let i=0;i<3;i++){gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,i===2?1:3,gl.FLOAT,false,28,i===0?0:i===1?12:24);}
+    gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.UNSIGNED_SHORT,false,12,0);
+    gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.UNSIGNED_BYTE,true,12,6);
+    gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,1,gl.UNSIGNED_BYTE,false,12,9);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.indices);
     gl.bindVertexArray(null);
     if(old)this.drop(key);
-    this.meshes.set(key,{vao,vbo,count:data.length/7,bytes:data.byteLength,source:t});this.stats.bytes+=data.byteLength;
+    this.meshes.set(key,{vao,vbo,count:quads*6,bytes:data.byteLength,source:t});this.stats.bytes+=data.byteLength;
   }
   setCoverage(x:number,z:number,data:Uint8Array):void {
     this.maskX=x;this.maskZ=z;
@@ -89,12 +108,12 @@ export class HorizonRenderer {
     for(const t of tiles){const width=16*2**t.level,x=t.x*width,z=t.z*width;
       if(!p.frustum.testBox(x-p.camX,-64-p.camY,z-p.camZ,x+width-p.camX,320-p.camY,z+width-p.camZ))continue;
       const m=this.meshes.get(tileKey(t.level,t.x,t.z));if(!m)continue;
-      s.vec3('offset',x-p.camX,-p.camY,z-p.camZ);s.vec2('origin',x,z);gl.bindVertexArray(m.vao);gl.drawArrays(gl.TRIANGLES,0,m.count);
+      s.vec3('offset',x-p.camX,-p.camY-64,z-p.camZ);s.vec2('origin',x,z);gl.bindVertexArray(m.vao);gl.drawElements(gl.TRIANGLES,m.count,gl.UNSIGNED_INT,0);
       this.stats.draws++;this.stats.vertices+=m.count;
     }
     gl.bindVertexArray(null);gl.enable(gl.CULL_FACE);gl.activeTexture(gl.TEXTURE0);
   }
   drop(key:string):void {const m=this.meshes.get(key);if(m){this.gl.deleteVertexArray(m.vao);this.gl.deleteBuffer(m.vbo);this.stats.bytes-=m.bytes;this.meshes.delete(key);}}
   reset():void {for(const key of this.meshes.keys())this.drop(key);}
-  dispose():void {this.reset();this.gl.deleteTexture(this.mask);this.gl.deleteProgram(this.shader.program);}
+  dispose():void {this.reset();this.gl.deleteTexture(this.mask);this.gl.deleteBuffer(this.indices);this.gl.deleteProgram(this.shader.program);}
 }

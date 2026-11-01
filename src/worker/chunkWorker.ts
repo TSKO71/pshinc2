@@ -1,9 +1,9 @@
-import { World } from '../world/world';
 import { captureChunk } from '../horizon/source';
 import type { HorizonJob } from './pool';
 // Worker: chunk generation and section meshing.
 
 import '../world/blocks';
+import { World } from '../world/world';
 import { ChunkGenerator, type GenOutput } from '../world/gen/generator';
 import { NetherGenerator } from '../world/gen/nether';
 import { EndGenerator } from '../world/gen/theEnd';

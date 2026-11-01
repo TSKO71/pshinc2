@@ -31,5 +31,8 @@ try {
   assert.throws(()=>D.mergeTiles([children[0],children[0],children[2],children[3]]));
   assert.deepEqual(M.exposed(0,10,[span(2,4,1),span(7,12,1)]),[[0,2],[4,7]]);
   assert.equal(D.detailLevel(192),0);assert.equal(D.detailLevel(384),1);assert.equal(D.detailLevel(1536),3);
+  const flat={level:0,x:0,z:0,columns:Array.from({length:256},()=>[span(0,10,1)])};
+  const mesh=M.meshTile(flat,()=>0xabcdef);
+  assert.equal(mesh.length/7,24,'a solid rectangular tile must collapse to six quads');
   console.log('PASS: 200 voxel-oracle reductions; light isolation; air/cavities; atomic four-child replacement; negative coordinates; occlusion; distance levels');
 } finally {await close();}
