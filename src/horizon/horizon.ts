@@ -59,7 +59,7 @@ export class Horizon {
   readonly gpu: HorizonRenderer;
   readonly radius: number;
   readonly tiles = new Map<string,Tile>();
-  stats={sourceBytes:0,generated:0,coarseGenerated:0,cached:0,coarseCached:0,pending:0,tiles:0,captured:0,cacheFull:false};
+  stats={sourceBytes:0,generated:0,coarseGenerated:0,coarsestGeneratedLevel:0,cached:0,coarseCached:0,pending:0,tiles:0,captured:0,cacheFull:false};
   private queue: Generator<[number,number,number]>|null=null;
   private cx=NaN;private cz=NaN;
   private requests: {level:number;x:number;z:number;epoch:number}[]=[];
@@ -134,7 +134,7 @@ export class Horizon {
       return {type:'horizon',cx:x,cz:z,level,done:t=>{
         if(epoch!==this.epoch)return;
         this.finishPending(level,x,z,epoch);
-        this.accept(t);this.stats.generated++;if(level>0)this.stats.coarseGenerated++;
+        this.accept(t);this.stats.generated++;this.stats.coarsestGeneratedLevel=Math.max(this.stats.coarsestGeneratedLevel,level);if(level>0)this.stats.coarseGenerated++;
       },failed:()=>this.finishPending(level,x,z,epoch)};
     }
     if(!this.queue)return null;
@@ -149,7 +149,7 @@ export class Horizon {
       void loadTile(this.cacheKey(level,x,z)).then(async cached=>{
         if(epoch!==this.epoch||this.pending.get(key)!==epoch)return;
         if(cached){
-          this.accept(cached,false);this.stats.cached++;if(level>0)this.stats.coarseCached++;
+          this.accept(cached,false);this.stats.cached++;this.stats.coarsestGeneratedLevel=Math.max(this.stats.coarsestGeneratedLevel,level);if(level>0)this.stats.coarseCached++;
           this.finishPending(level,x,z,epoch);this.manager.pool.pump();return;
         }
         if(epoch!==this.epoch||this.pending.get(key)!==epoch)return;
