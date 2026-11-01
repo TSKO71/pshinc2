@@ -29,7 +29,7 @@ try{
   // A valid horizon comparison requires an actual near-world baseline, not just
   // the spawn flag. Wait for resident chunk meshes before judging distant terrain.
   await page.waitForFunction(()=>window.__game.renderer.world.meshes.size>=8,null,{timeout:180000});
-  await page.waitForFunction(()=>{const s=window.__game.renderer.horizon.gpu.stats;return s.coarsestDrawnLevel>=3&&s.farthestDrawnDistanceBlocks>=768;},null,{timeout:180000});
+  await page.waitForFunction(()=>{const h=window.__game.renderer.horizon,s=h.gpu.stats;return h.tiles.has('5:-1:0')&&h.tiles.has('5:0:0')&&h.gpu.ready(h.tiles.get('5:-1:0'))&&h.gpu.ready(h.tiles.get('5:0:0'))&&s.draws>=2&&s.coarsestDrawnLevel>=3&&s.farthestDrawnDistanceBlocks>=768;},null,{timeout:180000});
   await page.waitForFunction(()=>window.__game.renderer.horizon.gpu.stats.draws>0,null,{timeout:120000});
   await page.waitForTimeout(4000);
   report.first=await page.evaluate(()=>{
