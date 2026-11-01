@@ -59,8 +59,28 @@ try{
       });
       return {level:t.level,x:t.x,z:t.z,origin:[t.x*width,t.z*width],width,columns:t.columns.length,occupied,minTop,maxTop,avgRunTop:occupied?sumTop/occupied:null,avgColumnTop:valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:null,columnsAboveSea:valid.filter(v=>v>=63).length,forwardSamples,runs};
     });
-    const meshes=[...h.gpu.meshes.entries()].map(([key,m])=>({key,count:m.count,bytes:m.bytes}));
-    return {url:location.href,search:location.search,stats:h.stats,gpu:h.gpu.stats,gl:window.__gl,world:{chunks:window.__game.chunks.world.chunks.size,meshes:window.__game.renderer.world.meshes.size},tiles,meshes};
+    const gl=g.renderer.gl,cam=[player.x,player.y+player.eyeHeightCam,player.z];
+    const mul=(m,v)=>[0,1,2,3].map(i=>m[i]*v[0]+m[4+i]*v[1]+m[8+i]*v[2]+m[12+i]*v[3]);
+    const gpuMeshes=[...h.gpu.meshes.entries()].map(([key,m])=>{
+      gl.bindBuffer(gl.ARRAY_BUFFER,m.vbo);
+      const bytes=new Uint8Array(m.bytes);gl.getBufferSubData(gl.ARRAY_BUFFER,0,bytes);
+      const dv=new DataView(bytes.buffer),vertexCount=m.count/6*4;
+      let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
+      const samples=[];
+      for(let i=0;i<vertexCount;i++){
+        const o=i*12,x=dv.getUint16(o,true),y=dv.getUint16(o+2,true)-64,z=dv.getUint16(o+4,true);
+        minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);
+        if(i%Math.max(1,Math.floor(vertexCount/8))===0){
+          const tile=m.source,width=64*2**tile.level,world=[x+tile.x*width,y,z+tile.z*width];
+          const view=mul(g.renderer.view,[world[0]-cam[0],world[1]-cam[1],world[2]-cam[2],1]);
+          const clip=mul(g.renderer.proj,view);
+          samples.push({index:i,local:[x,y,z],world,ndc:clip[3]?[clip[0]/clip[3],clip[1]/clip[3],clip[2]/clip[3]]:null});
+        }
+      }
+      return {key,count:m.count,bytes:m.bytes,vertexCount,bounds:{minX,maxX,minY,maxY,minZ,maxZ},samples};
+    });
+    gl.bindBuffer(gl.ARRAY_BUFFER,null);
+    return {url:location.href,search:location.search,stats:h.stats,gpu:h.gpu.stats,gl:window.__gl,camera:cam,world:{chunks:g.chunks.world.chunks.size,meshes:g.renderer.world.meshes.size},tiles,meshes:gpuMeshes};
   });
   report.view=await page.evaluate(()=>({position:[window.__game.player.x,window.__game.player.y,window.__game.player.z],yaw:window.__game.player.yaw,pitch:window.__game.player.pitch,horizon:window.__game.renderer.horizon.gpu.stats,world:{chunks:window.__game.chunks.world.chunks.size,meshes:window.__game.renderer.world.meshes.size}}));
   await page.screenshot({path:dir+'/initial.png'});
