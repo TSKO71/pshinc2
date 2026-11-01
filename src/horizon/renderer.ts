@@ -76,18 +76,26 @@ export class HorizonRenderer {
       for(let c=0;c<3;c++)view.setUint8(o+6+c,Math.round(floats[p+3+c]*255));view.setUint8(o+9,floats[p+6]);
     }
     const quads=count/4;
+    let indexData:Uint32Array|null=null;
     if(quads>this.indexCapacity){
       this.indexCapacity=Math.max(quads,this.indexCapacity*2,1024);
-      const ids=new Uint32Array(this.indexCapacity*6);
-      for(let q=0;q<this.indexCapacity;q++)ids.set([q*4,q*4+1,q*4+2,q*4,q*4+2,q*4+3],q*6);
-      gl.bindBuffer(gl.COPY_WRITE_BUFFER,this.indices);gl.bufferData(gl.COPY_WRITE_BUFFER,ids,gl.STATIC_DRAW);
+      indexData=new Uint32Array(this.indexCapacity*6);
+      for(let q=0;q<this.indexCapacity;q++)indexData.set([q*4,q*4+1,q*4+2,q*4,q*4+2,q*4+3],q*6);
     }
     const vao=gl.createVertexArray()!,vbo=gl.createBuffer()!;
     gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,vbo);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.UNSIGNED_SHORT,false,12,0);
     gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.UNSIGNED_BYTE,true,12,6);
     gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,1,gl.UNSIGNED_BYTE,false,12,9);
+    // The element buffer binding is VAO state in WebGL2. Allocate/update it
+    // through ELEMENT_ARRAY_BUFFER while this VAO is active so every mesh VAO
+    // retains the shared index buffer rather than an empty/null element binding.
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.indices);
+    if(indexData)gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,indexData,gl.STATIC_DRAW);
+    if(gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING)!==this.indices)
+      throw new Error('Horizon VAO failed to retain its element index buffer');
+    if((gl.getBufferParameter(gl.ELEMENT_ARRAY_BUFFER,gl.BUFFER_SIZE) as number)<count*4)
+      throw new Error('Horizon element index buffer is smaller than the mesh draw count');
     gl.bindVertexArray(null);
     if(old)this.drop(key);
     this.meshes.set(key,{vao,vbo,count:quads*6,bytes:data.byteLength,source:t});this.stats.bytes+=data.byteLength;
