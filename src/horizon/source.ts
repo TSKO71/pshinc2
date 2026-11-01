@@ -1,7 +1,7 @@
 import { FLAGS, F_AIR } from '../world/block';
 import { MIN_Y, MAX_Y } from '../world/constants';
 import type { Chunk } from '../world/chunk';
-import { packColumn, type Tile, type Column } from './data';
+import { packColumn, TILE_SIZE, type Tile, type Column } from './data';
 
 
 /**
@@ -16,21 +16,31 @@ export function captureGeneratedTile(
   generator: { sampleLodColumn(x: number, z: number): import('../world/gen/generator').LodSampleRun[] },
 ): Tile {
   const step = 2 ** level;
-  const baseX = tileX * 16 * step, baseZ = tileZ * 16 * step;
-  const columns: Uint32Array[] = new Array(256);
-  for (let z = 0; z < 16; z++) {
-    for (let x = 0; x < 16; x++) {
+  const baseX = tileX * TILE_SIZE * step, baseZ = tileZ * TILE_SIZE * step;
+  const columns: Uint32Array[] = new Array(TILE_SIZE * TILE_SIZE);
+  for (let z = 0; z < TILE_SIZE; z++) {
+    for (let x = 0; x < TILE_SIZE; x++) {
       const wx = baseX + x * step + Math.floor(step / 2);
       const wz = baseZ + z * step + Math.floor(step / 2);
-      columns[z * 16 + x] = packColumn(generator.sampleLodColumn(wx, wz).map(run => ({bottom:run.min,top:run.max,id:run.state+run.biome*65536,sky:run.sky,block:run.block})));
+      columns[z * TILE_SIZE + x] = packColumn(generator.sampleLodColumn(wx, wz).map(run => ({bottom:run.min,top:run.max,id:run.state+run.biome*65536,sky:run.sky,block:run.block})));
     }
   }
   return { level, x: tileX, z: tileZ, columns };
 }
 
-/** Read the actual, decorated world, including cavities, foliage and structures. */
-export function captureChunk(c: Chunk): Tile {
-  const columns: Uint32Array[] = [];
+/**
+ * Replace one 16x16 loaded chunk region inside its 64x64 level-zero DH tile.
+ * The other 48x64 columns remain sourced from direct generator sampling.
+ */
+export function captureChunk(c: Chunk, base: Tile): Tile {
+  const tileX = Math.floor(c.cx / 4), tileZ = Math.floor(c.cz / 4);
+  if (base.level !== 0 || base.x !== tileX || base.z !== tileZ ||
+      base.columns.length !== TILE_SIZE * TILE_SIZE) {
+    throw new Error('Loaded chunk does not match its 64x64 base tile');
+  }
+  const columns = base.columns.slice();
+  const offsetX = (c.cx - tileX * 4) * 16;
+  const offsetZ = (c.cz - tileZ * 4) * 16;
   for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
     const out: Column = [];
     for (let y = MIN_Y; y < MAX_Y; y++) {
@@ -42,7 +52,7 @@ export function captureChunk(c: Chunk): Tile {
       if (last && last.top === y && last.id === id && last.sky === sky && last.block === block) last.top++;
       else out.push({ bottom: y, top: y + 1, id, sky, block });
     }
-    columns.push(packColumn(out));
+    columns[(offsetZ + z) * TILE_SIZE + offsetX + x] = packColumn(out);
   }
-  return { level: 0, x: c.cx, z: c.cz, columns };
+  return { ...base, columns };
 }
