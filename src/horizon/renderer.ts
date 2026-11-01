@@ -5,7 +5,7 @@ import { BLOCKS, STATE_BLOCK, STATE_VIEWS } from '../world/block';
 import { BIOMES } from '../world/gen/biomes';
 import type { Variant } from '../world/models';
 import type { Tile } from './data';
-import { tileKey } from './data';
+import { tileKey, TILE_SIZE } from './data';
 import { meshTile } from './mesh';
 const VS = `#version 300 es
 layout(location=0) in vec3 pos; layout(location=1) in vec3 color; layout(location=2) in float light;
@@ -105,7 +105,7 @@ export class HorizonRenderer {
     s.vec2('maskOrigin',this.maskX,this.maskZ);s.i('lightmap',1);s.i('coverage',7);
     gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,p.lightmap);
     gl.activeTexture(gl.TEXTURE7);gl.bindTexture(gl.TEXTURE_2D,this.mask);
-    for(const t of tiles){const width=16*2**t.level,x=t.x*width,z=t.z*width;
+    for(const t of tiles){const width=TILE_SIZE*2**t.level,x=t.x*width,z=t.z*width;
       if(!p.frustum.testBox(x-p.camX,-64-p.camY,z-p.camZ,x+width-p.camX,320-p.camY,z+width-p.camZ))continue;
       const m=this.meshes.get(tileKey(t.level,t.x,t.z));if(!m)continue;
       s.vec3('offset',x-p.camX,-p.camY-64,z-p.camZ);s.vec2('origin',x,z);gl.bindVertexArray(m.vao);gl.drawElements(gl.TRIANGLES,m.count,gl.UNSIGNED_INT,0);
