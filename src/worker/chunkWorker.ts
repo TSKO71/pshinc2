@@ -3,12 +3,13 @@ import type { HorizonJob } from './pool';
 // Worker: chunk generation and section meshing.
 
 import '../world/blocks';
-import { ChunkGenerator } from '../world/gen/generator';
+import { ChunkGenerator, type GenOutput } from '../world/gen/generator';
 import { NetherGenerator } from '../world/gen/nether';
 import { EndGenerator } from '../world/gen/theEnd';
 import type { DimensionId } from '../world/dimension';
 import { initMesher, meshSection, MeshInput } from '../render/mesher';
 import type { SpriteRect } from '../world/models';
+import { computeChunkLight } from '../world/lightlocal';
 
 let seed = '';
 const gens: Partial<Record<DimensionId, { generate(cx: number, cz: number): GenOutput }>> = {};
