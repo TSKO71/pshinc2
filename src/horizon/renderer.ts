@@ -16,8 +16,8 @@ const FS = `#version 300 es
 precision highp float; precision highp usampler2D;
 in vec3 rgb; in vec2 lm; in vec2 worldXZ; in float dist;
 uniform sampler2D lightmap; uniform usampler2D coverage; uniform vec2 maskOrigin;
-uniform vec3 fogColor; uniform vec2 fogRange; out vec4 o;
-void main(){ivec2 c=ivec2(floor(worldXZ/16.)-maskOrigin);if(all(greaterThanEqual(c,ivec2(0)))&&all(lessThan(c,ivec2(128)))){if(texelFetch(coverage,c,0).r>0u)discard;}
+uniform vec3 fogColor; uniform vec2 fogRange; uniform int debugMode; out vec4 o;
+void main(){if(debugMode==1){o=vec4(0.04,1.0,0.82,1.0);return;}ivec2 c=ivec2(floor(worldXZ/16.)-maskOrigin);if(all(greaterThanEqual(c,ivec2(0)))&&all(lessThan(c,ivec2(128)))){if(texelFetch(coverage,c,0).r>0u)discard;}
 float f=smoothstep(fogRange.x,fogRange.y,dist);o=vec4(mix(rgb*texture(lightmap,lm).rgb,fogColor,f),1.);}`;
 interface Mesh { vao: WebGLVertexArrayObject; vbo: WebGLBuffer; count: number; bytes: number; source: Tile }
 export class HorizonRenderer {
@@ -99,8 +99,9 @@ export class HorizonRenderer {
     gl.activeTexture(gl.TEXTURE0);
   }
   draw(tiles:Tile[],p:TerrainParams,radius:number):void {
-    const gl=this.gl,s=this.shader.use();this.stats.draws=0;this.stats.vertices=0;this.stats.coarsestDrawnLevel=0;this.stats.farthestDrawnDistanceBlocks=0;
-    gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.disable(gl.BLEND);gl.disable(gl.CULL_FACE);
+    const gl=this.gl,s=this.shader.use(),debug=new URLSearchParams(location.search).get('horizonDebug')==='1';this.stats.draws=0;this.stats.vertices=0;this.stats.coarsestDrawnLevel=0;this.stats.farthestDrawnDistanceBlocks=0;
+    gl.enable(gl.DEPTH_TEST);if(debug)gl.disable(gl.DEPTH_TEST);gl.depthMask(true);gl.disable(gl.BLEND);gl.disable(gl.CULL_FACE);
+    s.i('debugMode',debug?1:0);
     s.mat4('proj',p.proj);s.mat4('view',p.view);s.vec3('fogColor',...p.fogColor);s.vec2('fogRange',radius*.7,radius);
     s.vec2('maskOrigin',this.maskX,this.maskZ);s.i('lightmap',1);s.i('coverage',7);
     gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,p.lightmap);
@@ -111,7 +112,7 @@ export class HorizonRenderer {
       s.vec3('offset',x-p.camX,-p.camY-64,z-p.camZ);s.vec2('origin',x,z);gl.bindVertexArray(m.vao);gl.drawElements(gl.TRIANGLES,m.count,gl.UNSIGNED_INT,0);
       this.stats.draws++;this.stats.vertices+=m.count;this.stats.coarsestDrawnLevel=Math.max(this.stats.coarsestDrawnLevel,t.level);this.stats.farthestDrawnDistanceBlocks=Math.max(this.stats.farthestDrawnDistanceBlocks,Math.hypot(x+width/2-p.camX,z+width/2-p.camZ));
     }
-    gl.bindVertexArray(null);gl.enable(gl.CULL_FACE);gl.activeTexture(gl.TEXTURE0);
+    gl.bindVertexArray(null);gl.enable(gl.CULL_FACE);gl.enable(gl.DEPTH_TEST);gl.activeTexture(gl.TEXTURE0);
   }
   drop(key:string):void {const m=this.meshes.get(key);if(m){this.gl.deleteVertexArray(m.vao);this.gl.deleteBuffer(m.vbo);this.stats.bytes-=m.bytes;this.meshes.delete(key);}}
   reset():void {for(const key of this.meshes.keys())this.drop(key);}
