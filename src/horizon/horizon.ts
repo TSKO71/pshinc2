@@ -20,20 +20,28 @@ function* coordinates(cx:number,cz:number,radiusChunks:number):Generator<[number
     const distance=Math.hypot(playerX-(minX+width/2),playerZ-(minZ+width/2));
     const desired=detailLevel(distance);
     if(level>desired&&level>0){
-      for(let xSide=0;xSide<2;xSide++)for(let zSide=0;zSide<2;zSide++)
-        yield* walk(level-1,x*2+xSide,z*2+zSide);
+      const children:[number,number,number][]=[];
+      for(let xSide=0;xSide<2;xSide++)for(let zSide=0;zSide<2;zSide++)children.push([level-1,x*2+xSide,z*2+zSide]);
+      children.sort((a,b)=>{
+        const wa=16*2**a[0],wb=16*2**b[0];
+        return Math.hypot((a[1]+.5)*wa-playerX,(a[2]+.5)*wa-playerZ)-Math.hypot((b[1]+.5)*wb-playerX,(b[2]+.5)*wb-playerZ);
+      });
+      for(const child of children)yield* walk(child[0],child[1],child[2]);
     }else yield [level,x,z];
   }
   const width=16*2**rootLevel;
   const minX=Math.floor((playerX-radius)/width),maxX=Math.floor((playerX+radius)/width);
   const minZ=Math.floor((playerZ-radius)/width),maxZ=Math.floor((playerZ+radius)/width);
-  for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++)yield* walk(rootLevel,x,z);
+  const roots:[number,number][]=[];
+  for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++)roots.push([x,z]);
+  roots.sort((a,b)=>Math.hypot((a[0]+.5)*width-playerX,(a[1]+.5)*width-playerZ)-Math.hypot((b[0]+.5)*width-playerX,(b[1]+.5)*width-playerZ));
+  for(const root of roots)yield* walk(rootLevel,root[0],root[1]);
 }
 export class Horizon {
   readonly gpu: HorizonRenderer;
   readonly radius: number;
   readonly tiles = new Map<string,Tile>();
-  stats={sourceBytes:0,generated:0,cached:0,pending:0,tiles:0,captured:0,cacheFull:false};
+  stats={sourceBytes:0,generated:0,coarseGenerated:0,cached:0,coarseCached:0,pending:0,tiles:0,captured:0,cacheFull:false};
   private queue: Generator<[number,number,number]>|null=null;
   private cx=NaN;private cz=NaN;
   private requests: {level:number;x:number;z:number;saved:Awaited<ReturnType<NonNullable<ChunkManager['savedLoader']>>>;epoch:number}[]=[];
@@ -108,7 +116,7 @@ export class Horizon {
       return {type:'horizon',cx:x,cz:z,level,saved,done:t=>{
         if(epoch!==this.epoch)return;
         this.finishPending(level,x,z,epoch);
-        this.accept(t);this.stats.generated++;
+        this.accept(t);this.stats.generated++;if(level>0)this.stats.coarseGenerated++;
       },failed:()=>this.finishPending(level,x,z,epoch)};
     }
     if(!this.queue)return null;
@@ -123,7 +131,7 @@ export class Horizon {
       void loadTile(this.cacheKey(level,x,z)).then(async cached=>{
         if(epoch!==this.epoch||this.pending.get(key)!==epoch)return;
         if(cached){
-          this.accept(cached,false);this.stats.cached++;
+          this.accept(cached,false);this.stats.cached++;if(level>0)this.stats.coarseCached++;
           this.finishPending(level,x,z,epoch);this.manager.pool.pump();return;
         }
         const saved=level===0?await this.manager.savedLoader?.(x,z)??null:null;
