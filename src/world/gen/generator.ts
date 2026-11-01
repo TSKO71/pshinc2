@@ -27,13 +27,22 @@ import { AncientCities } from './ancientCity';
 // (trial chambers)
 import { TrialChambers, quartBiome3d } from './trialChambers';
 import { worldSeed64 } from './jigsaw';
-import { S, getBlock } from '../block';
+import { S, getBlock, FLAGS, F_OPAQUE, OPACITY, EMISSION } from '../block';
 import { MIN_Y, MAX_Y, SEA_LEVEL, COLUMN_VOLUME, colIndex, CAVE_BIOME_LEVELS, NO_CAVE_BIOME } from '../constants';
 import { hash3, hash2, hashFloat, hash32, Rand, hashString } from '../../core/rng';
 import { clampedMap } from '../../core/math';
 import { computeChunkLight } from '../lightlocal';
 import type { SavedBlockEntity } from '../blockEntity';
 import type { SavedEntity } from '../../entity/mob';
+
+export interface LodSampleRun {
+  min: number;
+  max: number;
+  state: number;
+  biome: number;
+  sky: number;
+  block: number;
+}
 
 export interface GenOutput {
   cx: number;
@@ -221,6 +230,156 @@ export class ChunkGenerator {
       if (sub === -1 || (!oceanFloor && (sub === FLUID_WATER || sub === FLUID_LAVA))) return y + 1;
     }
     return MIN_Y;
+  }
+
+
+  /**
+   * Build one distant-terrain column from the native noise router.
+   * It samples the same density fields, noodle caves, aquifers, biome and
+   * surface rules as generate(), without allocating a full chunk, running
+   * carvers/features, or performing chunk lighting.
+   */
+  sampleLodColumn(x: number, z: number): LodSampleRun[] {
+    const x0 = Math.floor(x / CELL_W) * CELL_W, z0 = Math.floor(z / CELL_W) * CELL_W;
+    const cols = [
+      this.heightCol(x0, z0), this.heightCol(x0 + CELL_W, z0),
+      this.heightCol(x0, z0 + CELL_W), this.heightCol(x0 + CELL_W, z0 + CELL_W),
+    ];
+    const prelim = this.router.preliminarySurface(cols[0].c);
+    const tx = (x - x0) / CELL_W, tz = (z - z0) / CELL_W;
+    let topCell = 0;
+    for (const col of cols) topCell = Math.max(topCell, col.exactTop);
+    topCell = Math.min(NCY - 2, topCell);
+    const yStart = Math.max(MIN_Y + (topCell + 1) * CELL_H - 1, Math.min(prelim + 16, MAX_Y - 1), SEA_LEVEL - 1);
+    const cv = new Float32Array(8 * CHANNELS);
+    const states = new Uint16Array(MAX_Y - MIN_Y);
+    const STONE = S('stone'), WATER = S('water'), LAVA = S('lava');
+    const COPPER = S('copper_ore'), RAW_COPPER = S('raw_copper_block'), GRANITE = S('granite');
+    const DIRON = S('deepslate_iron_ore'), RAW_IRON = S('raw_iron_block'), TUFF = S('tuff');
+    const oreGap = this.router.n.ore_gap;
+    let cell = -1, allAir = false;
+    for (let y = MIN_Y; y <= yStart; y++) {
+      const cj = Math.floor((y - MIN_Y) / CELL_H);
+      if (cj !== cell) {
+        cell = cj;
+        let maxMain = -Infinity;
+        for (let n = 0; n < 8; n++) {
+          const di = n & 1, dj = (n >> 1) & 1, dk = (n >> 2) & 1;
+          const col = cols[di + dk * 2], j = cj + dj;
+          let v = col.corners[j];
+          if (!v) {
+            v = new Float32Array(CHANNELS);
+            this.router.corner(x0 + di * CELL_W, MIN_Y + j * CELL_H, z0 + dk * CELL_W, col.c, v, 0, j <= col.exactTop);
+            col.corners[j] = v;
+          }
+          cv.set(v, n * CHANNELS);
+          maxMain = Math.max(maxMain, v[CH_MAIN]);
+        }
+        allAir = maxMain < 0 && MIN_Y + cj * CELL_H >= SEA_LEVEL + 8;
+      }
+      if (allAir && y > prelim + 16) continue;
+      const ty = (y - (MIN_Y + cell * CELL_H)) / CELL_H;
+      let density = squeeze(0.64 * tri(cv, CH_MAIN, tx, ty, tz));
+      if (tri(cv, CH_NTOGGLE, tx, ty, tz) >= 0) {
+        const noodle = tri(cv, CH_NTHICK, tx, ty, tz) +
+          1.5 * Math.max(Math.abs(tri(cv, CH_NRA, tx, ty, tz)), Math.abs(tri(cv, CH_NRB, tx, ty, tz)));
+        if (noodle < density) density = noodle;
+      }
+      let state = 0;
+      if (density > 0) {
+        state = STONE;
+        if (y >= -60 && y <= 50) {
+          const vein = tri(cv, CH_VTOGGLE, tx, ty, tz);
+          const copper = vein > 0, vmin = copper ? 0 : -60, vmax = copper ? 50 : -8;
+          if (y >= vmin && y <= vmax) {
+            const edge = Math.min(vmax - y, y - vmin);
+            const fade = clampedMap(edge, 0, 20, -0.2, 0);
+            if (Math.abs(vein) + fade >= 0.4) {
+              const h = hash3(x, y, z, this.seedHash ^ 0x0e5);
+              const r1 = hashFloat(h), r2 = hashFloat(hash32(h + 1)), r3 = hashFloat(hash32(h + 2));
+              if (r1 <= 0.7 && tri(cv, CH_VRIDGED, tx, ty, tz) < 0) {
+                const threshold = clampedMap(Math.abs(vein), 0.4, 0.6, 0.1, 0.3);
+                if (r2 < threshold && oreGap.getValue(x, y, z) > -0.3)
+                  state = r3 < 0.02 ? (copper ? RAW_COPPER : RAW_IRON) : copper ? COPPER : DIRON;
+                else state = copper ? GRANITE : TUFF;
+              }
+            }
+          }
+        }
+      } else if (!(y >= SEA_LEVEL && y > prelim + 16)) {
+        const fluid = this.pointAquifer.substance(x, y, z, density);
+        if (fluid === -1) state = STONE;
+        else if (fluid === 1) state = WATER;
+        else if (fluid === 2) state = LAVA;
+      }
+      states[y - MIN_Y] = state;
+    }
+
+    const biome = this.columnBiome(x, z);
+    const chunkX = Math.floor(x / 16) * 16, chunkZ = Math.floor(z / 16) * 16;
+    const p00 = this.router.preliminarySurface(this.heightCol(chunkX, chunkZ).c);
+    const p10 = this.router.preliminarySurface(this.heightCol(chunkX + 16, chunkZ).c);
+    const p01 = this.router.preliminarySurface(this.heightCol(chunkX, chunkZ + 16).c);
+    const p11 = this.router.preliminarySurface(this.heightCol(chunkX + 16, chunkZ + 16).c);
+    const fx = (x - chunkX) / 16, fz = (z - chunkZ) / 16;
+    const preliminary = p00 * (1 - fx) * (1 - fz) + p10 * fx * (1 - fz) +
+      p01 * (1 - fx) * fz + p11 * fx * fz;
+    const sNoise = this.surfaceNoise.getValue(x, 0, z);
+    const surfaceDepth = Math.floor(sNoise * 2.75 + 3 + hashFloat(hash2(x, z, this.seedHash ^ 0x5d)) * 0.25);
+    const secondary = this.surfaceSecondary.getValue(x, 0, z);
+    const minSurface = Math.floor(preliminary) + surfaceDepth - 8;
+    const steep = this.firstFreeHeight(x, z + 1) >= this.firstFreeHeight(x, z - 1) + 4 ||
+      this.firstFreeHeight(x - 1, z) >= this.firstFreeHeight(x + 1, z) + 4;
+    let top = MIN_Y;
+    for (let y = Math.min(yStart, MAX_Y - 1); y >= MIN_Y; y--) {
+      if (states[y - MIN_Y] !== 0) { top = y + 1; break; }
+    }
+
+    let depth = 0, waterHeight = -Infinity, solidBottom = Infinity;
+    const K = BLOCKS_SURF();
+    for (let y = top - 1; y >= MIN_Y; y--) {
+      const i = y - MIN_Y, state = states[i];
+      if (state === 0) { depth = 0; waterHeight = -Infinity; continue; }
+      if (state === WATER || state === LAVA) {
+        if (waterHeight === -Infinity) waterHeight = y + 1;
+        continue;
+      }
+      if (solidBottom >= y) {
+        solidBottom = -2032;
+        for (let j = y - 1; j >= MIN_Y - 1; j--) {
+          const below = j < MIN_Y ? 0 : states[j - MIN_Y];
+          if (below === 0 || below === WATER || below === LAVA) { solidBottom = j + 1; break; }
+        }
+      }
+      depth++;
+      if (state !== STONE) continue;
+      let replacement = -1;
+      if (y < MIN_Y + 5 && this.gradient(x, y, z, MIN_Y, MIN_Y + 5, 0xbed)) replacement = K.BEDROCK;
+      else if (y >= minSurface)
+        replacement = this.surfaceRule(x, y, z, biome, depth, y - solidBottom + 1, waterHeight, surfaceDepth, secondary, sNoise, steep, K);
+      if (replacement < 0 && y < 8 && this.gradient(x, y, z, 0, 8, 0xdee)) replacement = K.DEEPSLATE;
+      if (replacement >= 0) states[i] = replacement;
+    }
+    states[0] = K.BEDROCK;
+
+    // Vertical light is deterministic and cheap; lateral block-light propagation
+    // is intentionally left to captured full-resolution chunk data.
+    const runs: LodSampleRun[] = [];
+    let sky = 15, block = 0;
+    for (let y = MAX_Y - 1; y >= MIN_Y; y--) {
+      const state = states[y - MIN_Y];
+      if (!state) continue;
+      const sampleSky = sky, sampleBlock = Math.max(block, EMISSION[state] || 0);
+      const last = runs[runs.length - 1];
+      if (last && last.min === y + 1 && last.state === state && last.sky === sampleSky && last.block === sampleBlock) last.min = y;
+      else runs.push({ min: y, max: y + 1, state, biome, sky: sampleSky, block: sampleBlock });
+      const opacity = (FLAGS[state] & F_OPAQUE) ? 15 : OPACITY[state];
+      const attenuation = Math.max(1, opacity);
+      sky = Math.max(0, sky - attenuation);
+      block = Math.max(0, sampleBlock - attenuation);
+    }
+    runs.reverse();
+    return runs;
   }
 
   /**
