@@ -77,7 +77,16 @@ try{
       }
       gl.bindVertexArray(m.vao);
       const ebo=gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
-      const indices=new Uint32Array(m.count);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ebo);gl.getBufferSubData(gl.ELEMENT_ARRAY_BUFFER,0,indices);
+      const eboSize=gl.getBufferParameter(gl.ELEMENT_ARRAY_BUFFER,gl.BUFFER_SIZE);
+      const indices=new Uint32Array(m.count);
+      if(ebo){gl.bindBuffer(gl.COPY_READ_BUFFER,ebo);gl.getBufferSubData(gl.COPY_READ_BUFFER,0,indices);}
+      const attribs=[0,1,2].map(index=>({
+        enabled:gl.getVertexAttrib(index,gl.VERTEX_ATTRIB_ARRAY_ENABLED),
+        size:gl.getVertexAttrib(index,gl.VERTEX_ATTRIB_ARRAY_SIZE),
+        type:gl.getVertexAttrib(index,gl.VERTEX_ATTRIB_ARRAY_TYPE),
+        stride:gl.getVertexAttrib(index,gl.VERTEX_ATTRIB_ARRAY_STRIDE),
+        buffer:!!gl.getVertexAttrib(index,gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING)
+      }));
       gl.bindVertexArray(null);
       let triangles=0,front=0,overlap=0,nondegenerate=0,indicesMax=0;
       for(let i=0;i<indices.length;i+=3){
@@ -92,7 +101,7 @@ try{
         const minU=Math.min(ax,bx,cx),maxU=Math.max(ax,bx,cx),minV=Math.min(ay,by,cy),maxV=Math.max(ay,by,cy);
         if(maxU>=-1&&minU<=1&&maxV>=-1&&minV<=1)overlap++;
       }
-      return {key,count:m.count,bytes:m.bytes,vertexCount,bounds:{minX,maxX,minY,maxY,minZ,maxZ},indicesMax,triangles,front,overlap,nondegenerate,samples};
+      return {key,count:m.count,bytes:m.bytes,vertexCount,bounds:{minX,maxX,minY,maxY,minZ,maxZ},eboPresent:!!ebo,eboSize,eboHead:Array.from(indices.slice(0,24)),attribs,indicesMax,triangles,front,overlap,nondegenerate,samples};
     });
     gl.bindBuffer(gl.ARRAY_BUFFER,null);
     return {url:location.href,search:location.search,stats:h.stats,gpu:h.gpu.stats,gl:window.__gl,camera:cam,world:{chunks:g.chunks.world.chunks.size,meshes:g.renderer.world.meshes.size},tiles,meshes:gpuMeshes};
