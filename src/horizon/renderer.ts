@@ -28,7 +28,7 @@ export class HorizonRenderer {
   private meshes = new Map<string, Mesh>();
   private colors = new Map<number, number>();
   maskX = 0; maskZ = 0;
-  stats = { draws: 0, vertices: 0, bytes: 0, coarsestDrawnLevel: 0, farthestDrawnDistanceBlocks: 0 };
+  stats = { draws: 0, vertices: 0, bytes: 0, coarsestDrawnLevel: 0, farthestDrawnDistanceBlocks: 0, debugMode: 0 };
   constructor(private gl: GL, private atlas: Atlas) {
     this.shader = new Shader(gl, VS, FS, 'horizon');
     this.indices = gl.createBuffer()!;
@@ -99,7 +99,7 @@ export class HorizonRenderer {
     gl.activeTexture(gl.TEXTURE0);
   }
   draw(tiles:Tile[],p:TerrainParams,radius:number):void {
-    const gl=this.gl,s=this.shader.use(),debug=new URLSearchParams(location.search).get('horizonDebug')==='1';this.stats.draws=0;this.stats.vertices=0;this.stats.coarsestDrawnLevel=0;this.stats.farthestDrawnDistanceBlocks=0;
+    const gl=this.gl,s=this.shader.use(),debug=new URLSearchParams(location.search).get('horizonDebug')==='1';this.stats.draws=0;this.stats.vertices=0;this.stats.coarsestDrawnLevel=0;this.stats.farthestDrawnDistanceBlocks=0;this.stats.debugMode=debug?1:0;
     gl.enable(gl.DEPTH_TEST);if(debug)gl.disable(gl.DEPTH_TEST);gl.depthMask(true);gl.disable(gl.BLEND);gl.disable(gl.CULL_FACE);
     s.i('debugMode',debug?1:0);
     s.mat4('proj',p.proj);s.mat4('view',p.view);s.vec3('fogColor',...p.fogColor);s.vec2('fogRange',radius*.7,radius);
