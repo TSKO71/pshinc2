@@ -25,7 +25,7 @@ try{
   await page.goto('http://127.0.0.1:4173/?quick&seed=dh-port-smoke&rd=2&horizon=128&horizonDebug=1&t=6000',{timeout:60000});
   await page.waitForFunction(()=>window.__game?.spawned,null,{timeout:180000});
   await page.keyboard.press('Escape');
-  await page.evaluate(()=>{const g=window.__game;g.screen=null;g.player.setGameMode('spectator');g.teleport(g.player.x,160,g.player.z,0,30);g.player.flying=true;});
+  await page.evaluate(()=>{const g=window.__game;g.screen=null;g.player.setGameMode('spectator');g.teleport(g.player.x,72,g.player.z,0,0.2);g.player.flying=true;});
   // A valid horizon comparison requires an actual near-world baseline, not just
   // the spawn flag. Wait for resident chunk meshes before judging distant terrain.
   await page.waitForFunction(()=>window.__game.renderer.world.meshes.size>=8,null,{timeout:180000});
