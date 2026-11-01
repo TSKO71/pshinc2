@@ -40,7 +40,6 @@ export interface LightJob {
 }
 export interface HorizonJob {
   type: 'horizon'; cx: number; cz: number; level: number;
-  saved: Awaited<ReturnType<NonNullable<ChunkManager['savedLoader']>>>;
   done: (tile: Tile) => void; failed: () => void;
 }
 export type Job = GenJob | MeshJob | LightJob | HorizonJob;
@@ -140,7 +139,7 @@ export class WorkerPool {
     const id = this.nextId++;
     this.pending.set(id, job);
     w.inflight++;
-    if (job.type === 'horizon') w.worker.postMessage({ type: 'horizon', id, cx: job.cx, cz: job.cz, level: job.level, saved: job.saved });
+    if (job.type === 'horizon') w.worker.postMessage({ type: 'horizon', id, cx: job.cx, cz: job.cz, level: job.level });
     else if (job.type === 'gen') w.worker.postMessage({ type: 'gen', id, dim: job.dim, cx: job.cx, cz: job.cz });
     else if (job.type === 'light') {
       const copy = new Uint16Array(job.blocks);
