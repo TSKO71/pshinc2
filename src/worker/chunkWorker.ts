@@ -1,19 +1,16 @@
-import { captureChunk, captureGeneratedTile } from '../horizon/source';
+import { captureGeneratedTile } from '../horizon/source';
 import type { HorizonJob } from './pool';
 // Worker: chunk generation and section meshing.
 
 import '../world/blocks';
-import { World } from '../world/world';
-import { ChunkGenerator, type GenOutput } from '../world/gen/generator';
+import { ChunkGenerator } from '../world/gen/generator';
 import { NetherGenerator } from '../world/gen/nether';
 import { EndGenerator } from '../world/gen/theEnd';
 import type { DimensionId } from '../world/dimension';
 import { initMesher, meshSection, MeshInput } from '../render/mesher';
 import type { SpriteRect } from '../world/models';
-import { computeChunkLight } from '../world/lightlocal';
 
 let seed = '';
-const horizonGenerationCache = new Map<string, GenOutput>();
 const gens: Partial<Record<DimensionId, { generate(cx: number, cz: number): GenOutput }>> = {};
 
 /** each dimension's generator, made the first time it's asked for */
@@ -39,33 +36,10 @@ ctx.onmessage = (e: MessageEvent) => {
       initMesher(m.sprites);
       ctx.postMessage({ type: 'ready' });
     } else if (m.type === 'horizon') {
-      if (m.level > 0) {
-        // Coarse data is sampled directly from the native density generator:
-        // no 3x3 full-chunk generation, meshing, decoration or chunk lighting.
-        const tile = captureGeneratedTile(m.cx, m.cz, m.level, genFor('overworld') as ChunkGenerator);
-        ctx.postMessage({ type: 'horizon', id: m.id, tile }, tile.columns.map(c => c.buffer));
-      } else {
-      // The SAME generator and World.addChunk border-write rules as the near world.
-      // No sampled height function or independent terrain representation.
-      const world = new World(), gen = genFor('overworld');
-      for (let dx=-1;dx<=1;dx++) for (let dz=-1;dz<=1;dz++) {
-        const cx=m.cx+dx,cz=m.cz+dz;
-        if(dx===0&&dz===0&&m.saved){
-          world.addChunk({cx,cz,blocks:m.saved.blocks,biomes:m.saved.biomes,
-            light:computeChunkLight(m.saved.blocks,true),pending:m.saved.genWrites,baked:m.saved.baked});
-        } else {
-          const key=`${cx},${cz}`;
-          let generated=horizonGenerationCache.get(key);
-          if(!generated){generated=gen.generate(cx,cz);horizonGenerationCache.set(key,generated);}
-          else {horizonGenerationCache.delete(key);horizonGenerationCache.set(key,generated);}
-          while(horizonGenerationCache.size>16)horizonGenerationCache.delete(horizonGenerationCache.keys().next().value!);
-          // World copies section arrays; the immutable generation result remains reusable.
-          world.addChunk(generated);
-        }
-      }
-      const tile=captureChunk(world.getChunk(m.cx,m.cz)!);
-      ctx.postMessage({type:'horizon',id:m.id,tile},tile.columns.map(c=>c.buffer));
-      }
+      // Every LOD detail level uses native world-generator column sampling.
+      // Loaded, decorated chunks later overwrite these samples through Horizon.mark().
+      const tile = captureGeneratedTile(m.cx, m.cz, m.level, genFor('overworld') as ChunkGenerator);
+      ctx.postMessage({ type: 'horizon', id: m.id, tile }, tile.columns.map(c => c.buffer));
     } else if (m.type === 'gen') {
       const t0 = performance.now();
       const out = genFor(m.dim ?? 'overworld').generate(m.cx, m.cz);
