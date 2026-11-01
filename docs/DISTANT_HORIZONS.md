@@ -37,9 +37,12 @@ coarse ancestors. Structures and placed features beyond the loaded area therefor
 remain absent until their chunks are visited; this is an explicit difference from
 full chunk generation, not a fabricated heightmap fallback.
 
-Tiles currently hold 16 x 16 columns, smaller than Distant Horizons' 64 x 64
-FullDataSource sections. The data reduction and hierarchy rules are ported, but
-this smaller section footprint increases tile bookkeeping and potential draw calls.
+Tiles now use Distant Horizons' 64 x 64 FullDataSource section footprint.
+The root level is selected from the requested radius so the coarsest tile stays
+large enough to cover the horizon while retaining 64 samples across each axis.
+Loaded 16 x 16 chunks overwrite only their corresponding quadrant inside a
+64 x 64 level-zero tile; unsampled columns remain sourced from the same world
+generator. Four-child merges reduce the 128 x 128 child grid to one 64 x 64 parent.
 Worker jobs are bounded by the shared worker pool and duplicate coordinates are
 suppressed. Every quadtree root (level 7, 2048 blocks per tile) is queued before its fine
 leaves. This is required because renderer selection starts at root tiles; isolated
