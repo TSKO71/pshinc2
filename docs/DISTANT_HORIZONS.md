@@ -41,7 +41,10 @@ Tiles currently hold 16 x 16 columns, smaller than Distant Horizons' 64 x 64
 FullDataSource sections. The data reduction and hierarchy rules are ported, but
 this smaller section footprint increases tile bookkeeping and potential draw calls.
 Worker jobs are bounded by the shared worker pool and duplicate coordinates are
-suppressed. IndexedDB stores derived tiles; memory and GPU residency are bounded.
+suppressed. A coarse fallback grid (minimum level 3, 128 blocks per tile) is queued
+before fine leaves; completed siblings then propagate through intermediate levels.
+This avoids queuing hundreds of tiny near-player fallback tiles. IndexedDB stores
+derived tiles; memory and GPU residency are bounded.
 
 The parent/child GPU handoff does not imply pixel-identical near/far shading.
 The LOD shader uses atlas-average colours and the existing lightmap; hyperShader
