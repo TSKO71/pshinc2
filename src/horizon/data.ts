@@ -4,6 +4,8 @@
  */
 export interface Span { bottom: number; top: number; id: number; block: number; sky: number }
 export type Column = Span[]; // ascending Y, half-open intervals
+export const TILE_SIZE = 64;
+export const MAX_LOD_LEVEL = 7;
 export interface Tile { level: number; x: number; z: number; columns: Uint32Array[] }
 /** FullDataPointUtil's 64-bit layout, stored as two uint32 words to avoid
  * allocating BigInt/object values per datapoint in the retained cache. */
@@ -64,9 +66,9 @@ export function mergeTiles(children: readonly Tile[]): Tile {
   for (const c of children) if (c.level !== level - 1 || Math.floor(c.x / 2) !== x || Math.floor(c.z / 2) !== z) throw new Error('Non-sibling tiles');
   const lookup = new Map(children.map(c => [`${c.x},${c.z}`, c]));
   if (lookup.size !== 4) throw new Error('Duplicate child');
-  const at = (sx: number, sz: number): Uint32Array => lookup.get(`${x * 2 + (sx >> 4)},${z * 2 + (sz >> 4)}`)!.columns[(sz & 15) * 16 + (sx & 15)];
+  const at = (sx: number, sz: number): Uint32Array => lookup.get(`${x * 2 + (sx >> 6)},${z * 2 + (sz >> 6)}`)!.columns[(sz & 63) * TILE_SIZE + (sx & 63)];
   const columns: Uint32Array[] = [];
-  for (let cz = 0; cz < 16; cz++) for (let cx = 0; cx < 16; cx++)
+  for (let cz = 0; cz < TILE_SIZE; cz++) for (let cx = 0; cx < TILE_SIZE; cx++)
     columns.push(packColumn(mergeColumns([at(cx * 2, cz * 2), at(cx * 2, cz * 2 + 1), at(cx * 2 + 1, cz * 2), at(cx * 2 + 1, cz * 2 + 1)].map(unpackColumn))));
   return { level, x, z, columns };
 }
@@ -78,11 +80,12 @@ export function mergeChildIntoParent(parent: Tile, child: Tile): Tile {
       Math.floor(child.x / 2) !== parent.x ||
       Math.floor(child.z / 2) !== parent.z) throw new Error('Child does not belong to parent tile');
   const columns = parent.columns.slice();
-  const offsetX = (child.x - parent.x * 2) * 8;
-  const offsetZ = (child.z - parent.z * 2) * 8;
-  for (let z = 0; z < 8; z++) for (let x = 0; x < 8; x++) {
-    const at = (cx: number, cz: number) => unpackColumn(child.columns[cz * 16 + cx]);
-    columns[(offsetZ + z) * 16 + offsetX + x] = packColumn(mergeColumns([
+  const half = TILE_SIZE >> 1;
+  const offsetX = (child.x - parent.x * 2) * half;
+  const offsetZ = (child.z - parent.z * 2) * half;
+  for (let z = 0; z < half; z++) for (let x = 0; x < half; x++) {
+    const at = (cx: number, cz: number) => unpackColumn(child.columns[cz * TILE_SIZE + cx]);
+    columns[(offsetZ + z) * TILE_SIZE + offsetX + x] = packColumn(mergeColumns([
       at(x * 2, z * 2), at(x * 2, z * 2 + 1),
       at(x * 2 + 1, z * 2), at(x * 2 + 1, z * 2 + 1),
     ]));
@@ -100,7 +103,7 @@ export function detailLevel(distance: number): number {
  */
 export function selectTiles(tile: Tile, get: (l: number, x: number, z: number) => Tile | undefined,
   ready: (t: Tile) => boolean, camX: number, camZ: number): Tile[] {
-  const width = 16 * 2 ** tile.level;
+  const width = TILE_SIZE * 2 ** tile.level;
   const desired = detailLevel(Math.hypot(camX - (tile.x + .5) * width, camZ - (tile.z + .5) * width));
   if (tile.level > desired) {
     const selected: Tile[] = [];
