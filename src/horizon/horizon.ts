@@ -35,7 +35,25 @@ function* coordinates(cx:number,cz:number,radiusChunks:number):Generator<[number
   const roots:[number,number][]=[];
   for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++)roots.push([x,z]);
   roots.sort((a,b)=>Math.hypot((a[0]+.5)*width-playerX,(a[1]+.5)*width-playerZ)-Math.hypot((b[0]+.5)*width-playerX,(b[1]+.5)*width-playerZ));
-  for(const root of roots)yield* walk(rootLevel,root[0],root[1]);
+
+  // Collect the desired leaf plan, then first queue one coarser fallback
+  // parent for every leaf. The renderer keeps that parent until all four
+  // child branches are complete, so the horizon exists before fine work ends.
+  const leaves:[number,number,number][]=[];
+  for(const root of roots)for(const leaf of walk(rootLevel,root[0],root[1]))leaves.push(leaf);
+  const leafKeys=new Set(leaves.map(t=>tileKey(t[0],t[1],t[2])));
+  const parents=new Map<string,[number,number,number]>();
+  for(const [level,x,z] of leaves)if(level<rootLevel){
+    const parent:[number,number,number]=[level+1,Math.floor(x/2),Math.floor(z/2)];
+    const key=tileKey(parent[0],parent[1],parent[2]);
+    if(!leafKeys.has(key))parents.set(key,parent);
+  }
+  const distance=(t:[number,number,number])=>{
+    const w=16*2**t[0];return Math.hypot((t[1]+.5)*w-playerX,(t[2]+.5)*w-playerZ);
+  };
+  const fallback=[...parents.values()].sort((a,b)=>distance(a)-distance(b));
+  for(const tile of fallback)yield tile;
+  for(const tile of leaves)yield tile;
 }
 export class Horizon {
   readonly gpu: HorizonRenderer;
