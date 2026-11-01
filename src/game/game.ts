@@ -1,3 +1,4 @@
+import { Horizon } from '../horizon/horizon';
 // Game shell: owns renderer, GUI, world, level, player; runs the 20 TPS tick
 // loop and per-frame rendering like vanilla's Minecraft.runTick / GameRenderer.
 
@@ -602,7 +603,9 @@ export class Game {
     this.receivingPortal = null;
     this.joined = false;
     this.renderer.world.meshes.forEach((_m, k) => this.renderer.world.dispose(k));
+    this.renderer.horizon?.dispose();
     this.chunks = new ChunkManager(this.world, this.pool!, this.renderer.world);
+    this.renderer.horizon = this.chunks.horizon = new Horizon(this.chunks, this.renderer.gl, this.atlas, meta.id, meta.seed);
     this.chunks.renderDistance = this.opts.renderDistance;
     this.chunks.smoothLighting = this.opts.smoothLighting;
     this.chunks.fancyLeaves = this.opts.fancy;
@@ -973,6 +976,8 @@ export class Game {
     this.loadingTicks = 0;
     this.pool?.terminate();
     this.pool = null;
+    this.renderer.horizon?.dispose();
+    this.renderer.horizon = null;
     for (const k of [...this.renderer.world.meshes.keys()]) this.renderer.world.dispose(k);
     this.renderer.particles?.clear();
     this.meta = null;

@@ -1,3 +1,6 @@
+import { World } from '../world/world';
+import { captureChunk } from '../horizon/source';
+import type { HorizonJob } from './pool';
 // Worker: chunk generation and section meshing.
 
 import '../world/blocks';
@@ -22,7 +25,7 @@ function genFor(dim: DimensionId): { generate(cx: number, cz: number): GenOutput
 interface InitMsg { type: 'init'; seed: string; sprites: Record<string, SpriteRect> }
 interface GenMsg { type: 'gen'; id: number; dim: DimensionId; cx: number; cz: number }
 interface MeshMsg { type: 'mesh'; id: number; input: MeshInput }
-type Msg = InitMsg | GenMsg | MeshMsg;
+type Msg = InitMsg | GenMsg | MeshMsg | (Omit<HorizonJob, 'done' | 'failed'> & {id: number});
 
 const ctx = self as unknown as { postMessage(msg: unknown, transfer?: Transferable[]): void; onmessage: ((e: MessageEvent) => void) | null };
 
@@ -34,6 +37,19 @@ ctx.onmessage = (e: MessageEvent) => {
       genFor('overworld');
       initMesher(m.sprites);
       ctx.postMessage({ type: 'ready' });
+    } else if (m.type === 'horizon') {
+      // The SAME generator and World.addChunk border-write rules as the near world.
+      // No sampled height function or independent terrain representation.
+      const world = new World(), gen = genFor('overworld');
+      for (let dx=-1;dx<=1;dx++) for (let dz=-1;dz<=1;dz++) {
+        const cx=m.cx+dx,cz=m.cz+dz;
+        if(dx===0&&dz===0&&m.saved){
+          world.addChunk({cx,cz,blocks:m.saved.blocks,biomes:m.saved.biomes,
+            light:computeChunkLight(m.saved.blocks,true),pending:m.saved.genWrites,baked:m.saved.baked});
+        } else world.addChunk(gen.generate(cx,cz));
+      }
+      const tile=captureChunk(world.getChunk(m.cx,m.cz)!);
+      ctx.postMessage({type:'horizon',id:m.id,tile});
     } else if (m.type === 'gen') {
       const t0 = performance.now();
       const out = genFor(m.dim ?? 'overworld').generate(m.cx, m.cz);

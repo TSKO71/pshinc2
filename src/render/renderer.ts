@@ -1,5 +1,6 @@
 // Frame orchestration: camera matrices, sky, terrain, (entities), clouds.
 
+import type { Horizon } from '../horizon/horizon';
 import { GL } from './gl';
 import { Atlas } from './atlas';
 import { Lightmap } from './lightmap';
@@ -97,6 +98,7 @@ export class Renderer {
   readonly viewProj = mat4();
   readonly frustum = new Frustum();
   private readonly reflectedFrustum = new Frustum();
+  horizon: Horizon | null = null;
   renderDistance = 12;
   cloudsEnabled = true;
   skipClouds = false;
@@ -135,7 +137,7 @@ export class Renderer {
   }
 
   setupCamera(cam: Camera, bob: Mat4 | null): void {
-    const far = Math.max(this.renderDistance * 16 * 4, 256);
+    const far = Math.max(this.renderDistance * 16 * 4, this.horizon?.enabled ? this.horizon.radius * 16 * 1.5 : 256);
     perspective(this.proj, cam.fov * DEG, this.width / this.height, 0.05, far);
     const v = this.viewRot;
     v.fill(0);
@@ -304,6 +306,10 @@ export class Renderer {
       frustum: this.frustum,
       hyper: hyper ?? undefined,
     };
+    if (this.horizon?.enabled && !e.underwater && !e.lava && !skyBlocked) {
+      tp.fogStart = this.horizon.radius * 16 * .7;
+      tp.fogEnd = this.horizon.radius * 16;
+    }
     this.lastFogStart = fogStart;
     this.lastFogEnd = fogEnd;
     this.lastFogShape = fogShape;
@@ -336,6 +342,7 @@ export class Renderer {
       if(planarVisible)this.world.restoreVisible(mainVisible);
     }
     this.world.drawOpaque(tp);
+    if (!e.underwater && !e.lava && !skyBlocked) this.horizon?.draw(tp, rdBlocks);
     // Full-resolution End ray marching only shades unobstructed space.
     // Keep the exact same integration, planet detail and output resolution.
     if(hyper?.dimension===2)hyper.drawSky(false,true);

@@ -1,6 +1,7 @@
 // Decides which chunks to generate/unload and which sections to mesh,
 // feeding the worker pool by priority (nearest first).
 
+import type { Horizon } from '../horizon/horizon';
 import { World } from './world';
 import { Chunk } from './chunk';
 import { WorkerPool, Job } from '../worker/pool';
@@ -10,6 +11,7 @@ import type { SavedBlockEntity } from './blockEntity';
 import type { PendingWrites } from './gen/context';
 
 export class ChunkManager {
+  horizon: Horizon | null = null;
   renderDistance = 12;
   smoothLighting = true;
   fancyLeaves = true;
@@ -44,13 +46,15 @@ export class ChunkManager {
 
   constructor(readonly world: World, readonly pool: WorkerPool, readonly renderer: WorldRenderer) {
     pool.jobSource = () => this.nextJob();
-    world.onDirty = () => {
+    world.onDirty = (c) => {
+      this.horizon?.mark(c);
       /* picked up by mesh scan */
     };
   }
 
   /** forget everything queued or on its way (the world was just emptied for another dimension) */
   reset(): void {
+    this.horizon?.reset();
     this.epoch++;
     this.requested.clear();
     this.remoteLatest.clear();
@@ -85,6 +89,7 @@ export class ChunkManager {
   }
 
   setCenter(x: number, z: number): void {
+    this.horizon?.center(x, z);
     const cx = Math.floor(x) >> 4, cz = Math.floor(z) >> 4;
     if (cx !== this.centerX || cz !== this.centerZ) {
       this.centerX = cx;
@@ -169,6 +174,7 @@ export class ChunkManager {
     });
     this.meshList = list;
     this.meshListIdx = 0;
+    this.horizon?.update();
     if (!this.paused) this.pool.pump();
   }
 
@@ -194,6 +200,7 @@ export class ChunkManager {
           this.requested.delete(key);
           if (this.world.chunks.has(key)) return;
           const c = this.world.addChunk({ cx: lj.cx, cz: lj.cz, blocks: lj.blocks, light, biomes: lj.biomes, caveBiomes: lj.caveBiomes, pending: lj.genWrites, baked: lj.baked, blockEntities: lj.blockEntities, postProcess: lj.postProcess, inhabitedTime: lj.inhabitedTime });
+          this.horizon?.mark(c);
           this.onChunkLoaded?.(c);
         },
       };
@@ -201,7 +208,7 @@ export class ChunkManager {
     // prefer meshing nearby sections; interleave with generation
     const mesh = this.nextMeshJob();
     if (mesh) return mesh;
-    return this.nextGenJob();
+    return this.nextGenJob() ?? this.horizon?.nextJob() ?? null;
   }
 
   private nextGenJob(): Job | null {
@@ -276,6 +283,7 @@ export class ChunkManager {
           this.stats.genMs += r.ms;
           this.stats.gens++;
           const c = this.world.addChunk(r);
+          this.horizon?.mark(c);
           this.onChunkLoaded?.(c);
         },
       };

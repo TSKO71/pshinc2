@@ -4,6 +4,8 @@ import type { SpriteRect } from '../world/models';
 import type { MeshInput } from '../render/mesher';
 import type { GenResult } from '../world/world';
 import type { DimensionId } from '../world/dimension';
+import type { Tile } from '../horizon/data';
+import type { ChunkManager } from '../world/chunkManager';
 import { touchOnly } from '../game/touch';
 
 /**
@@ -36,7 +38,12 @@ export interface LightJob {
   sky: boolean;
   done: (light: Uint8Array) => void;
 }
-export type Job = GenJob | MeshJob | LightJob;
+export interface HorizonJob {
+  type: 'horizon'; cx: number; cz: number;
+  saved: Awaited<ReturnType<NonNullable<ChunkManager['savedLoader']>>>;
+  done: (tile: Tile) => void; failed: () => void;
+}
+export type Job = GenJob | MeshJob | LightJob | HorizonJob;
 
 interface W {
   worker: Worker;
@@ -94,7 +101,7 @@ export class WorkerPool {
       const job = this.pending.get(d.id);
       this.pending.delete(d.id);
       w.inflight--;
-      void job;
+      if (job?.type === 'horizon') job.failed();
       this.pump();
       return;
     }
@@ -109,6 +116,8 @@ export class WorkerPool {
     } else if (job.type === 'mesh' && d.type === 'mesh') {
       this.stats.mesh++;
       job.done(d);
+    } else if (job.type === 'horizon' && d.type === 'horizon') {
+      job.done(d.tile);
     } else if (job.type === 'light' && d.type === 'light') {
       job.done(d.light);
     }
@@ -131,7 +140,8 @@ export class WorkerPool {
     const id = this.nextId++;
     this.pending.set(id, job);
     w.inflight++;
-    if (job.type === 'gen') w.worker.postMessage({ type: 'gen', id, dim: job.dim, cx: job.cx, cz: job.cz });
+    if (job.type === 'horizon') w.worker.postMessage({ type: 'horizon', id, cx: job.cx, cz: job.cz, saved: job.saved });
+    else if (job.type === 'gen') w.worker.postMessage({ type: 'gen', id, dim: job.dim, cx: job.cx, cz: job.cz });
     else if (job.type === 'light') {
       const copy = new Uint16Array(job.blocks);
       w.worker.postMessage({ type: 'light', id, blocks: copy, sky: job.sky }, [copy.buffer]);
