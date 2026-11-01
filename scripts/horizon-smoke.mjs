@@ -27,11 +27,18 @@ try{
   await page.waitForFunction(()=>window.__game.renderer.horizon.stats.generated>0,null,{timeout:180000});
   await page.waitForFunction(()=>window.__game.renderer.horizon.gpu.stats.draws>0,null,{timeout:120000});
   report.first=await page.evaluate(()=>({stats:window.__game.renderer.horizon.stats,gpu:window.__game.renderer.horizon.gpu.stats,gl:window.__gl}));
+  await page.keyboard.press('Escape');
+  await page.evaluate(()=>{const g=window.__game;g.screen=null;g.player.setGameMode('spectator');g.teleport(g.player.x,140,g.player.z,0,15);g.player.flying=true;});
+  await page.waitForTimeout(1000);
   await page.screenshot({path:dir+'/initial.png'});
+  await page.evaluate(()=>{window.__game.opts.hyperShader=true;});
+  await page.waitForTimeout(2000);
+  report.hyper=await page.evaluate(()=>({gl:window.__gl,gpu:window.__game.renderer.horizon.gpu.stats}));
+  await page.screenshot({path:dir+'/hyper.png'});
   // Reset must cancel old completions and remove stale CPU/GPU state.
   report.reset=await page.evaluate(()=>{const h=window.__game.renderer.horizon;h.reset();return {tiles:h.tiles.size,bytes:h.gpu.stats.bytes};});
   if(report.reset.tiles||report.reset.bytes)throw Error('Reset leaked LOD data');
-  if(!report.first.gl.draws||report.first.gl.errors.length||report.first.gl.shaderErrors.length||errors.length)throw Error('Runtime errors or missing draws');
+  if(!report.first.gl.draws||report.hyper.gl.errors.length||report.hyper.gl.shaderErrors.length||report.first.gl.errors.length||report.first.gl.shaderErrors.length||errors.length)throw Error('Runtime errors or missing draws');
   report.result='PASS_SMOKE';
 }catch(e){report.result='FAIL';report.error=String(e);process.exitCode=1;}
 finally{report.errors=errors;console.log(JSON.stringify(report));await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2));await browser?.close();server.kill();}

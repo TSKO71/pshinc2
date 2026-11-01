@@ -4,7 +4,25 @@
  */
 export interface Span { bottom: number; top: number; id: number; block: number; sky: number }
 export type Column = Span[]; // ascending Y, half-open intervals
-export interface Tile { level: number; x: number; z: number; columns: Column[] }
+export interface Tile { level: number; x: number; z: number; columns: Uint32Array[] }
+/** FullDataPointUtil's 64-bit layout, stored as two uint32 words to avoid
+ * allocating BigInt/object values per datapoint in the retained cache. */
+export function packColumn(column: Column): Uint32Array {
+  const words=new Uint32Array(column.length*2);
+  for(let i=0;i<column.length;i++){
+    const s=column[i];
+    words[i*2]=s.id;
+    words[i*2+1]=((s.top-s.bottom)&4095)|(((s.bottom+64)&4095)<<12)|((s.sky&15)<<24)|((s.block&15)<<28);
+  }
+  return words;
+}
+export function unpackColumn(words: Uint32Array): Column {
+  const result:Column=[];
+  for(let i=0;i<words.length;i+=2){const high=words[i+1],bottom=((high>>>12)&4095)-64;
+    result.push({id:words[i],bottom,top:bottom+(high&4095),sky:(high>>>24)&15,block:high>>>28});
+  }
+  return result;
+}
 export const tileKey = (level: number, x: number, z: number): string => `${level}:${x}:${z}`;
 
 /** FullDataSourceV2.mergeInputTwoByTwoDataColumn and winning-ID lighting.
@@ -46,10 +64,10 @@ export function mergeTiles(children: readonly Tile[]): Tile {
   for (const c of children) if (c.level !== level - 1 || Math.floor(c.x / 2) !== x || Math.floor(c.z / 2) !== z) throw new Error('Non-sibling tiles');
   const lookup = new Map(children.map(c => [`${c.x},${c.z}`, c]));
   if (lookup.size !== 4) throw new Error('Duplicate child');
-  const at = (sx: number, sz: number): Column => lookup.get(`${x * 2 + (sx >> 4)},${z * 2 + (sz >> 4)}`)!.columns[(sz & 15) * 16 + (sx & 15)];
-  const columns: Column[] = [];
+  const at = (sx: number, sz: number): Uint32Array => lookup.get(`${x * 2 + (sx >> 4)},${z * 2 + (sz >> 4)}`)!.columns[(sz & 15) * 16 + (sx & 15)];
+  const columns: Uint32Array[] = [];
   for (let cz = 0; cz < 16; cz++) for (let cx = 0; cx < 16; cx++)
-    columns.push(mergeColumns([at(cx * 2, cz * 2), at(cx * 2, cz * 2 + 1), at(cx * 2 + 1, cz * 2), at(cx * 2 + 1, cz * 2 + 1)]));
+    columns.push(packColumn(mergeColumns([at(cx * 2, cz * 2), at(cx * 2, cz * 2 + 1), at(cx * 2 + 1, cz * 2), at(cx * 2 + 1, cz * 2 + 1)].map(unpackColumn))));
   return { level, x, z, columns };
 }
 

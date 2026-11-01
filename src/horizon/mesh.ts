@@ -1,7 +1,8 @@
 /* Quad coalescing adapted from DH LodQuadBuilder.mergeQuads / BufferQuad.tryMerge.
  * Copyright (C) 2020 James Seibel and contributors; LGPL-3.0-only.
  */
-import type { Tile, Column } from './data';
+import { reduceRenderColumn, verticalLimit } from './reduce';
+import { unpackColumn, type Tile, type Column } from './data';
 /** Exposed portions of a vertical face, subtracting all opaque neighbour spans. */
 export function exposed(bottom: number, top: number, neighbour: Column): [number, number][] {
   const result: [number, number][] = [];
@@ -17,6 +18,7 @@ export function exposed(bottom: number, top: number, neighbour: Column): [number
   return result;
 }
 export function meshTile(tile: Tile, color: (id: number) => number): Float32Array {
+  const columns=tile.columns.map(c=>reduceRenderColumn(unpackColumn(c),verticalLimit(tile.level)));
   const vertices: number[] = [], step = 2 ** tile.level;
   type Rect = { u0:number;u1:number;v0:number;v1:number;axis:number;plane:number;rgb:number;light:number;shade:number };
   const groups = new Map<string,Rect[]>();
@@ -29,7 +31,7 @@ export function meshTile(tile: Tile, color: (id: number) => number): Float32Arra
       v0:Math.min(...points.map(p=>p[v])),v1:Math.max(...points.map(p=>p[v])),axis,plane,rgb,light,shade});
   };
   for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
-    const column = tile.columns[z * 16 + x];
+    const column = columns[z * 16 + x];
     const x0 = x * step, x1 = x0 + step, z0 = z * step, z1 = z0 + step;
     for (let i = 0; i < column.length; i++) {
       const s = column[i], rgb = color(s.id), light = (s.sky * 16 + s.block);
@@ -40,7 +42,7 @@ export function meshTile(tile: Tile, color: (id: number) => number): Float32Arra
         quad([[x0,b,z0],[x1,b,z0],[x1,b,z1],[x0,b,z1]],rgb,light,.5);
       for (const [dx,dz] of [[-1,0],[1,0],[0,-1],[0,1]]) {
         const nx=x+dx,nz=z+dz;
-        const neighbour = nx>=0&&nx<16&&nz>=0&&nz<16 ? tile.columns[nz*16+nx] : [];
+        const neighbour = nx>=0&&nx<16&&nz>=0&&nz<16 ? columns[nz*16+nx] : [];
         for (const [lo,hi] of exposed(b,t,neighbour)) {
           const p = dx<0 ? [[x0,lo,z0],[x0,lo,z1],[x0,hi,z1],[x0,hi,z0]] : dx>0 ? [[x1,lo,z1],[x1,lo,z0],[x1,hi,z0],[x1,hi,z1]] : dz<0 ? [[x1,lo,z0],[x0,lo,z0],[x0,hi,z0],[x1,hi,z0]] : [[x0,lo,z1],[x1,lo,z1],[x1,hi,z1],[x0,hi,z1]];
           quad(p,rgb,light,dx?.6:.8);

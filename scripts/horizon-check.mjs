@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { loadModules } from './load.mjs';
-const {mods:[D,M],close}=await loadModules(['/src/horizon/data.ts','/src/horizon/mesh.ts']);
+const {mods:[D,M,R],close}=await loadModules(['/src/horizon/data.ts','/src/horizon/mesh.ts','/src/horizon/reduce.ts']);
 const span=(bottom,top,id,sky=15,block=0)=>({bottom,top,id,sky,block});
 try {
   assert.deepEqual(D.mergeColumns([[span(0,5,1)],[],[],[]]),[span(0,5,1)]);
@@ -20,7 +20,7 @@ try {
       if(winner){assert.equal(result.sky,y%16);assert.equal(result.block,y%8);}
     }
   }
-  const tile=(level,x,z)=>({level,x,z,columns:Array.from({length:256},()=>[])});
+  const tile=(level,x,z)=>({level,x,z,columns:Array.from({length:256},()=>new Uint32Array())});
   const parent=tile(1,-1,-1),children=[tile(0,-2,-2),tile(0,-2,-1),tile(0,-1,-2),tile(0,-1,-1)];
   const map=new Map(children.map(t=>[D.tileKey(t.level,t.x,t.z),t]));
   let ready=new Set([parent,...children.slice(0,3)]);
@@ -31,7 +31,14 @@ try {
   assert.throws(()=>D.mergeTiles([children[0],children[0],children[2],children[3]]));
   assert.deepEqual(M.exposed(0,10,[span(2,4,1),span(7,12,1)]),[[0,2],[4,7]]);
   assert.equal(D.detailLevel(192),0);assert.equal(D.detailLevel(384),1);assert.equal(D.detailLevel(1536),3);
-  const flat={level:0,x:0,z:0,columns:Array.from({length:256},()=>[span(0,10,1)])};
+  const packedSample=[span(-64,320,0xffffffff,15,15),span(320,321,123,0,0)];
+  assert.deepEqual(D.unpackColumn(D.packColumn(packedSample)),packedSample);
+  const layered=Array.from({length:32},(_,i)=>span(i*3,i*3+2,i+1));
+  const original=structuredClone(layered),reduced=R.reduceRenderColumn(layered,6);
+  assert.ok(reduced.length<=6);assert.deepEqual(layered,original);
+  assert.deepEqual(R.reduceRenderColumn(layered,1),[{...layered.at(-1),bottom:layered[0].bottom}]);
+  for(let i=1;i<reduced.length;i++)assert.ok(reduced[i-1].top<=reduced[i].bottom);
+  const flat={level:0,x:0,z:0,columns:Array.from({length:256},()=>D.packColumn([span(0,10,1)]))};
   const mesh=M.meshTile(flat,()=>0xabcdef);
   assert.equal(mesh.length/7,24,'a solid rectangular tile must collapse to six quads');
   console.log('PASS: 200 voxel-oracle reductions; light isolation; air/cavities; atomic four-child replacement; negative coordinates; occlusion; distance levels');

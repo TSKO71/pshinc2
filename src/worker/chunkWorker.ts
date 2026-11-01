@@ -13,6 +13,7 @@ import type { SpriteRect } from '../world/models';
 import { computeChunkLight } from '../world/lightlocal';
 
 let seed = '';
+const horizonGenerationCache = new Map<string, GenOutput>();
 const gens: Partial<Record<DimensionId, { generate(cx: number, cz: number): GenOutput }>> = {};
 
 /** each dimension's generator, made the first time it's asked for */
@@ -46,7 +47,15 @@ ctx.onmessage = (e: MessageEvent) => {
         if(dx===0&&dz===0&&m.saved){
           world.addChunk({cx,cz,blocks:m.saved.blocks,biomes:m.saved.biomes,
             light:computeChunkLight(m.saved.blocks,true),pending:m.saved.genWrites,baked:m.saved.baked});
-        } else world.addChunk(gen.generate(cx,cz));
+        } else {
+          const key=`${cx},${cz}`;
+          let generated=horizonGenerationCache.get(key);
+          if(!generated){generated=gen.generate(cx,cz);horizonGenerationCache.set(key,generated);}
+          else {horizonGenerationCache.delete(key);horizonGenerationCache.set(key,generated);}
+          while(horizonGenerationCache.size>16)horizonGenerationCache.delete(horizonGenerationCache.keys().next().value!);
+          // World copies section arrays; the immutable generation result remains reusable.
+          world.addChunk(generated);
+        }
       }
       const tile=captureChunk(world.getChunk(m.cx,m.cz)!);
       ctx.postMessage({type:'horizon',id:m.id,tile});

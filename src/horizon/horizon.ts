@@ -22,7 +22,7 @@ export class Horizon {
   readonly gpu: HorizonRenderer;
   readonly radius: number;
   readonly tiles = new Map<string,Tile>();
-  stats={generated:0,cached:0,pending:0,tiles:0,captured:0,cacheFull:false};
+  stats={sourceBytes:0,generated:0,cached:0,pending:0,tiles:0,captured:0,cacheFull:false};
   private queue: Generator<[number,number]>|null=null;
   private cx=NaN;private cz=NaN;
   private requests: {x:number;z:number;saved:Awaited<ReturnType<NonNullable<ChunkManager['savedLoader']>>>}[]=[];
@@ -36,14 +36,18 @@ export class Horizon {
     this.gpu=new HorizonRenderer(gl,atlas);
     const n=Number(new URLSearchParams(location.search).get('horizon')??128);
     this.radius=Number.isFinite(n)?Math.max(0,Math.min(512,Math.trunc(n))):128;
-    this.namespace=`dh1:${BUILD_ID}:${worldId}:${seed}:`;
+    this.namespace=`dh2:${BUILD_ID}:${worldId}:${seed}:`;
   }
   get enabled():boolean{return this.radius>0&&!this.manager.remote&&this.manager.world.dim.id==='overworld';}
   private key(t:Tile):string{return tileKey(t.level,t.x,t.z);}
+  private bytes(t:Tile):number {return t.columns.reduce((n,c)=>n+c.byteLength+64,256);}
   private cacheKey(l:number,x:number,z:number):string{return `${this.namespace}${this.manager.world.dim.id}:${tileKey(l,x,z)}`;}
   mark(c:Chunk):void {if(this.enabled)this.dirty.add(c);}
   private accept(t:Tile,persist=true):void {
-    const key=this.key(t);this.tiles.set(key,t);this.uploads.set(key,t);
+    const key=this.key(t),previous=this.tiles.get(key);
+    if(previous)this.stats.sourceBytes-=this.bytes(previous);
+    this.stats.sourceBytes+=this.bytes(t);
+    this.tiles.set(key,t);this.uploads.set(key,t);
     if(persist)void saveTile(this.cacheKey(t.level,t.x,t.z),t);
     if(t.level<7){
       const px=Math.floor(t.x/2),pz=Math.floor(t.z/2),children:Tile[]=[];
@@ -82,10 +86,10 @@ export class Horizon {
       const w=16*2**t.level,d=Math.hypot((t.x+.5)*w-this.cx*16,(t.z+.5)*w-this.cz*16);
       const parent=this.tiles.get(tileKey(t.level+1,Math.floor(t.x/2),Math.floor(t.z/2)));
       if(parent&&this.gpu.ready(parent)&&t.level<detailLevel(Math.max(0,d-w))){
-        this.tiles.delete(key);this.uploads.delete(key);this.gpu.drop(key);
+        this.tiles.delete(key);this.stats.sourceBytes-=this.bytes(t);this.uploads.delete(key);this.gpu.drop(key);
       }
     }
-    this.stats.cacheFull=this.tiles.size>=4096||this.gpu.stats.bytes>128*1024*1024;
+    this.stats.cacheFull=this.stats.sourceBytes>64*1024*1024||this.gpu.stats.bytes>128*1024*1024;
   }
   private covered(x:number,z:number):boolean {
     const desired=detailLevel(Math.hypot((x-this.cx)*16,(z-this.cz)*16));
@@ -145,6 +149,6 @@ export class Horizon {
     }
     this.gpu.draw(selected,p,this.radius*16);
   }
-  reset():void {this.epoch++;this.queue=null;this.busy=false;this.requests=[];this.tiles.clear();this.dirty.clear();this.recovering.clear();this.uploads.clear();this.gpu.reset();}
+  reset():void {this.epoch++;this.queue=null;this.busy=false;this.requests=[];this.tiles.clear();this.stats.sourceBytes=0;this.stats.tiles=0;this.stats.pending=0;this.dirty.clear();this.recovering.clear();this.uploads.clear();this.gpu.reset();}
   dispose():void {this.reset();this.gpu.dispose();}
 }

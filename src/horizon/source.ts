@@ -1,11 +1,11 @@
 import { FLAGS, F_AIR } from '../world/block';
 import { MIN_Y, MAX_Y } from '../world/constants';
 import type { Chunk } from '../world/chunk';
-import type { Tile, Column } from './data';
+import { packColumn, type Tile, type Column } from './data';
 
 /** Read the actual, decorated world, including cavities, foliage and structures. */
 export function captureChunk(c: Chunk): Tile {
-  const columns: Column[] = [];
+  const columns: Uint32Array[] = [];
   for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
     const out: Column = [];
     for (let y = MIN_Y; y < MAX_Y; y++) {
@@ -17,7 +17,7 @@ export function captureChunk(c: Chunk): Tile {
       if (last && last.top === y && last.id === id && last.sky === sky && last.block === block) last.top++;
       else out.push({ bottom: y, top: y + 1, id, sky, block });
     }
-    columns.push(out);
+    columns.push(packColumn(out));
   }
   return { level: 0, x: c.cx, z: c.cz, columns };
 }

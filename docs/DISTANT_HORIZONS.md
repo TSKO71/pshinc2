@@ -17,10 +17,12 @@ with `npm ci && npm run build` to replace the adapted module.
 | Propagate updates one level at a time | FullDataSourceV2.updateFromOneBelowDetailLevel | mergeTiles, Horizon.accept | Negative coordinate tests pass |
 | Log-distance quality selection | LodQuadTree.calcDetailLevelFromDistance; MEDIUM enum | detailLevel | Boundary tests pass |
 | Parent stays until all four children render | LodQuadTree.onDetailLevelTooLow | selectTiles | Partial/complete readiness tests pass |
-| Canonical far generation, cross-chunk decoration | DH world-generator wrappers (Minecraft-specific) | chunkWorker horizon job, existing World.addChunk | Integrated; runtime validation pending |
+| Canonical far generation, cross-chunk decoration | DH world-generator wrappers (Minecraft-specific) | chunkWorker horizon job, existing World.addChunk | Integrated; prior candidate passed software WebGL2 smoke; final candidate pending |
 | Persistent derived source | FullDataSourceProviderV2, SQLite (platform-specific) | store.ts, IndexedDB | Integrated; persistence/reload validation pending |
-| Dedicated distant rendering | LodRenderer, ColumnRenderBufferBuilder (OpenGL-specific) | renderer.ts, mesh.ts, WebGL2 | Runtime validation pending |
-| DH multi-slice vertical quality reducer, greedy quad coalescing, GPU buffer arena | RenderDataPointReducingList, LodQuadBuilder, buffers | Not yet ported | Outstanding; performance parity NOT established |
+| Dedicated distant rendering | LodRenderer, ColumnRenderBufferBuilder (OpenGL-specific) | renderer.ts, mesh.ts, WebGL2 | Prior candidate: PASS_SMOKE; final candidate pending |
+| Vertical slice limit, small-segment reduction, highest/lowest reduce-to-one | RenderDataPointReducingList; MEDIUM vertical quality | reduce.ts | Implemented for opaque LOD mode; unit tests pass |
+| Greedy quad coalescing and indexed packed GPU vertices | LodQuadBuilder.mergeQuads; BufferQuad.tryMerge | mesh.ts, renderer.ts | Solid cuboid test reduces to six quads; packed 12-byte vertices |
+| Packed 64-bit full-data runs | FullDataPointUtil | packColumn/unpackColumn | Roundtrip tests pass; 2 uint32 words per run |
 | Multi-device visual/performance parity, distant pre-generation | DH generation queues, renderer | Not yet verified | Outstanding |
 
 Default requested horizon is 128 chunks (2048 blocks), configurable with
@@ -29,6 +31,7 @@ not proof of complete pre-generated coverage. Only real generated/saved terrain
 is rendered. New data builds gradually; there is no fabricated heightmap fallback.
 Full chunk generation currently costs substantially more than render-only cached
 LOD retrieval. Raw distant chunks are discarded; data and render memory are bounded.
+Distant generation retains at most 16 reusable canonical generator results per worker.
 Distant generation is lower priority than near jobs and has only one job pending.
 
 The parent/child GPU handoff does not imply pixel-identical near/far shading.
