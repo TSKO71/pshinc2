@@ -42,7 +42,8 @@ FullDataSource sections. The data reduction and hierarchy rules are ported, but
 this smaller section footprint increases tile bookkeeping and potential draw calls.
 Worker jobs are bounded by the shared worker pool and duplicate coordinates are
 suppressed. A coarse fallback grid (minimum level 3, 128 blocks per tile) is queued
-before fine leaves; completed siblings then propagate through intermediate levels.
+before fine leaves. The farthest/coarsest fallbacks are generated first, then
+nearer intermediate levels; completed siblings propagate through the hierarchy.
 This avoids queuing hundreds of tiny near-player fallback tiles. IndexedDB stores
 derived tiles; memory and GPU residency are bounded.
 
